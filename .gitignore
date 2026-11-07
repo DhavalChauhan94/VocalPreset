@@ -1,0 +1,21 @@
+# environments / builds
+.venv/
+__pycache__/
+*.pyc
+web/node_modules/
+web/dist/
+
+# generated audio (renders, uploads, jobs)
+out/
+
+# private audio: never commit someone's raw vocal
+samples/*.mpeg
+samples/*.mp3
+samples/*.wav
+samples/*.m4a
+samples/*.opus
+
+# local backups + legacy UI
+*.bak-*
+static/
+.DS_Store

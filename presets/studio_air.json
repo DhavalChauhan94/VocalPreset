@@ -1,0 +1,768 @@
+{
+  "source": "untitled2.fst",
+  "fl_version": "\u3432\u312e\u322e\u342e\u39334",
+  "track": {
+    "volume": 1.0,
+    "pan": 0
+  },
+  "chain": [
+    {
+      "slot": 0,
+      "plugin": "Fruity Limiter",
+      "type": "limiter",
+      "params": {
+        "input_gain_db": 0.0,
+        "saturation_db": 0.0,
+        "ceiling_db": -1.37,
+        "attack_raw": 1115,
+        "release_raw": 5000,
+        "sustain_raw": 2882,
+        "compressor_on": false,
+        "gate_on": false,
+        "changed_from_default": [
+          3
+        ],
+        "confidence": {
+          "ceiling_db": "high",
+          "comp/gate off": "high",
+          "attack/release": "defaults (FL ~ fast lookahead limiter)"
+        }
+      },
+      "raw_ints": [
+        7,
+        1000,
+        1000,
+        854,
+        1115,
+        3,
+        5000,
+        3,
+        2882,
+        1000,
+        0,
+        0,
+        0,
+        6666,
+        1,
+        650,
+        1000,
+        0,
+        4187,
+        1000,
+        1000,
+        1000,
+        1115,
+        3,
+        5000,
+        3,
+        2882,
+        1000,
+        0,
+        0,
+        0,
+        6666,
+        1,
+        650,
+        1000,
+        0,
+        4187,
+        50,
+        0,
+        16843009,
+        0,
+        0
+      ],
+      "enabled": true,
+      "mix": 1.0
+    },
+    {
+      "slot": 1,
+      "plugin": "Fruity Reeverb 2",
+      "type": "reeverb2",
+      "params": {
+        "raw": {
+          "high_cut": 1108,
+          "low_cut": 137,
+          "predelay": 0,
+          "size": 59,
+          "diffusion": 100,
+          "mod": 3,
+          "mod_speed": 15,
+          "bass_mult": 100,
+          "crossover": 500,
+          "unk10": 0,
+          "dry": 128,
+          "er": 39,
+          "wet": 36,
+          "unk14": 684,
+          "sep": 0
+        },
+        "confidence": "check (order/units unverified)"
+      },
+      "raw_ints": [
+        10001,
+        1108,
+        137,
+        0,
+        59,
+        100,
+        3,
+        15,
+        100,
+        500,
+        0,
+        128,
+        39,
+        36,
+        684,
+        0
+      ],
+      "enabled": true,
+      "mix": 1.0
+    },
+    {
+      "slot": 2,
+      "plugin": "Soundgoodizer",
+      "type": "soundgoodizer",
+      "params": {
+        "mode": "A",
+        "amount": 0.52,
+        "confidence": "high"
+      },
+      "raw_ints": [
+        3,
+        0,
+        520
+      ],
+      "enabled": true,
+      "mix": 1.0
+    },
+    {
+      "slot": 3,
+      "plugin": "Fruity Parametric EQ 2",
+      "type": "peq2",
+      "params": {
+        "bands": [
+          {
+            "band": 1,
+            "shape": "highpass",
+            "gain_db": 4.17,
+            "freq_hz": 224.7,
+            "bw_oct": 2.204,
+            "active": true,
+            "raw": {
+              "gain": 417,
+              "freq": 22950,
+              "width": 40124
+            }
+          },
+          {
+            "band": 2,
+            "shape": "peak",
+            "gain_db": 0.0,
+            "freq_hz": 136.3,
+            "bw_oct": 1.396,
+            "active": false,
+            "raw": {
+              "gain": 0,
+              "freq": 18204,
+              "width": 25412
+            }
+          },
+          {
+            "band": 3,
+            "shape": "peak",
+            "gain_db": 0.0,
+            "freq_hz": 293.6,
+            "bw_oct": 1.396,
+            "active": false,
+            "raw": {
+              "gain": 0,
+              "freq": 25486,
+              "width": 25412
+            }
+          },
+          {
+            "band": 4,
+            "shape": "peak",
+            "gain_db": 0.0,
+            "freq_hz": 632.5,
+            "bw_oct": 1.396,
+            "active": false,
+            "raw": {
+              "gain": 0,
+              "freq": 32768,
+              "width": 25412
+            }
+          },
+          {
+            "band": 5,
+            "shape": "peak",
+            "gain_db": 0.0,
+            "freq_hz": 1362.6,
+            "bw_oct": 1.396,
+            "active": false,
+            "raw": {
+              "gain": 0,
+              "freq": 40050,
+              "width": 25412
+            }
+          },
+          {
+            "band": 6,
+            "shape": "peak",
+            "gain_db": 0.0,
+            "freq_hz": 2935.7,
+            "bw_oct": 1.396,
+            "active": false,
+            "raw": {
+              "gain": 0,
+              "freq": 47332,
+              "width": 25412
+            }
+          },
+          {
+            "band": 7,
+            "shape": "highshelf",
+            "gain_db": 6.13,
+            "freq_hz": 7060.8,
+            "bw_oct": 2.204,
+            "active": true,
+            "raw": {
+              "gain": 613,
+              "freq": 55658,
+              "width": 40124
+            }
+          }
+        ],
+        "confidence": {
+          "shape": "high",
+          "gain_db": "high",
+          "freq_hz": "check",
+          "bw_oct": "check"
+        }
+      },
+      "raw_ints": [
+        8,
+        417,
+        0,
+        0,
+        0,
+        0,
+        0,
+        613,
+        22950,
+        18204,
+        25486,
+        32768,
+        40050,
+        47332,
+        55658,
+        40124,
+        25412,
+        25412,
+        25412,
+        25412,
+        25412,
+        40124,
+        3,
+        6,
+        6,
+        6,
+        6,
+        6,
+        7,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        10923,
+        18204,
+        25486,
+        32768,
+        40050,
+        47332,
+        54613,
+        40124,
+        25412,
+        25412,
+        25412,
+        25412,
+        25412,
+        40124,
+        5,
+        6,
+        6,
+        6,
+        6,
+        6,
+        7,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        0,
+        513,
+        256,
+        512,
+        0,
+        8339456,
+        65536,
+        0,
+        196608,
+        65536,
+        131072,
+        131072,
+        131072,
+        0
+      ],
+      "enabled": true,
+      "mix": 1.0
+    },
+    {
+      "slot": 4,
+      "plugin": "Fruity Phaser",
+      "type": "phaser",
+      "params": {
+        "raw": {
+          "sweep_freq": 1786,
+          "min_depth": 0,
+          "max_depth": 146,
+          "freq_range": 453,
+          "stereo": 701,
+          "stages": 2,
+          "feedback": 471,
+          "dry_wet": 21,
+          "out_gain": 2539
+        },
+        "confidence": "check"
+      },
+      "raw_ints": [
+        1,
+        1786,
+        0,
+        146,
+        453,
+        701,
+        2,
+        471,
+        21,
+        2539
+      ],
+      "enabled": true,
+      "mix": 0.1941
+    },
+    {
+      "slot": 5,
+      "plugin": "Fruity Parametric EQ 2",
+      "type": "peq2",
+      "params": {
+        "bands": [
+          {
+            "band": 1,
+            "shape": "lowshelf",
+            "gain_db": 0.0,
+            "freq_hz": 63.2,
+            "bw_oct": 2.204,
+            "active": false,
+            "raw": {
+              "gain": 0,
+              "freq": 10923,
+              "width": 40124
+            }
+          },
+          {
+            "band": 2,
+            "shape": "peak",
+            "gain_db": -4.39,
+            "freq_hz": 136.9,
+            "bw_oct": 0.05,
+            "active": true,
+            "raw": {
+              "gain": -439,
+              "freq": 18248,
+              "width": 0
+            }
+          },
+          {
+            "band": 3,
+            "shape": "peak",
+            "gain_db": -5.12,
+            "freq_hz": 247.7,
+            "bw_oct": 0.05,
+            "active": true,
+            "raw": {
+              "gain": -512,
+              "freq": 23874,
+              "width": 0
+            }
+          },
+          {
+            "band": 4,
+            "shape": "peak",
+            "gain_db": -4.58,
+            "freq_hz": 579.6,
+            "bw_oct": 0.05,
+            "active": true,
+            "raw": {
+              "gain": -458,
+              "freq": 31940,
+              "width": 0
+            }
+          },
+          {
+            "band": 5,
+            "shape": "peak",
+            "gain_db": -4.65,
+            "freq_hz": 2353.6,
+            "bw_oct": 0.05,
+            "active": true,
+            "raw": {
+              "gain": -465,
+              "freq": 45235,
+              "width": 0
+            }
+          },
+          {
+            "band": 6,
+            "shape": "peak",
+            "gain_db": -4.7,
+            "freq_hz": 5260.7,
+            "bw_oct": 0.05,
+            "active": true,
+            "raw": {
+              "gain": -470,
+              "freq": 52866,
+              "width": 0
+            }
+          },
+          {
+            "band": 7,
+            "shape": "highshelf",
+            "gain_db": 0.0,
+            "freq_hz": 6324.3,
+            "bw_oct": 2.204,
+            "active": false,
+            "raw": {
+              "gain": 0,
+              "freq": 54613,
+              "width": 40124
+            }
+          }
+        ],
+        "confidence": {
+          "shape": "high",
+          "gain_db": "high",
+          "freq_hz": "check",
+          "bw_oct": "check"
+        }
+      },
+      "raw_ints": [
+        8,
+        0,
+        -439,
+        -512,
+        -458,
+        -465,
+        -470,
+        0,
+        10923,
+        18248,
+        23874,
+        31940,
+        45235,
+        52866,
+        54613,
+        40124,
+        0,
+        0,
+        0,
+        0,
+        0,
+        40124,
+        5,
+        6,
+        6,
+        6,
+        6,
+        6,
+        7,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        10923,
+        18204,
+        25486,
+        32768,
+        40050,
+        47332,
+        54613,
+        40124,
+        25412,
+        25412,
+        25412,
+        25412,
+        25412,
+        40124,
+        5,
+        6,
+        6,
+        6,
+        6,
+        6,
+        7,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        0,
+        513,
+        256,
+        512,
+        0,
+        8339456,
+        65536,
+        0,
+        196608,
+        65536,
+        131072,
+        131072,
+        131072,
+        0
+      ],
+      "enabled": true,
+      "mix": 1.0
+    },
+    {
+      "slot": 6,
+      "plugin": "Fruity Parametric EQ 2",
+      "type": "peq2",
+      "params": {
+        "bands": [
+          {
+            "band": 1,
+            "shape": "peak",
+            "gain_db": 18.0,
+            "freq_hz": 66.8,
+            "bw_oct": 1.981,
+            "active": true,
+            "raw": {
+              "gain": 1800,
+              "freq": 11446,
+              "width": 36068
+            }
+          },
+          {
+            "band": 2,
+            "shape": "peak",
+            "gain_db": 0.0,
+            "freq_hz": 136.3,
+            "bw_oct": 1.396,
+            "active": false,
+            "raw": {
+              "gain": 0,
+              "freq": 18204,
+              "width": 25412
+            }
+          },
+          {
+            "band": 3,
+            "shape": "peak",
+            "gain_db": 0.0,
+            "freq_hz": 293.6,
+            "bw_oct": 1.396,
+            "active": false,
+            "raw": {
+              "gain": 0,
+              "freq": 25486,
+              "width": 25412
+            }
+          },
+          {
+            "band": 4,
+            "shape": "peak",
+            "gain_db": 0.0,
+            "freq_hz": 632.5,
+            "bw_oct": 1.396,
+            "active": false,
+            "raw": {
+              "gain": 0,
+              "freq": 32768,
+              "width": 25412
+            }
+          },
+          {
+            "band": 5,
+            "shape": "peak",
+            "gain_db": 0.0,
+            "freq_hz": 1362.6,
+            "bw_oct": 1.396,
+            "active": false,
+            "raw": {
+              "gain": 0,
+              "freq": 40050,
+              "width": 25412
+            }
+          },
+          {
+            "band": 6,
+            "shape": "peak",
+            "gain_db": 0.0,
+            "freq_hz": 2935.7,
+            "bw_oct": 1.396,
+            "active": false,
+            "raw": {
+              "gain": 0,
+              "freq": 47332,
+              "width": 25412
+            }
+          },
+          {
+            "band": 7,
+            "shape": "peak",
+            "gain_db": 5.93,
+            "freq_hz": 14860.5,
+            "bw_oct": 1.396,
+            "active": true,
+            "raw": {
+              "gain": 593,
+              "freq": 62718,
+              "width": 25412
+            }
+          }
+        ],
+        "confidence": {
+          "shape": "high",
+          "gain_db": "high",
+          "freq_hz": "check",
+          "bw_oct": "check"
+        }
+      },
+      "raw_ints": [
+        8,
+        1800,
+        0,
+        0,
+        0,
+        0,
+        0,
+        593,
+        11446,
+        18204,
+        25486,
+        32768,
+        40050,
+        47332,
+        62718,
+        36068,
+        25412,
+        25412,
+        25412,
+        25412,
+        25412,
+        25412,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        8,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        10923,
+        18204,
+        25486,
+        32768,
+        40050,
+        47332,
+        54613,
+        40124,
+        25412,
+        25412,
+        25412,
+        25412,
+        25412,
+        40124,
+        5,
+        6,
+        6,
+        6,
+        6,
+        6,
+        7,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        0,
+        513,
+        256,
+        512,
+        0,
+        8339456,
+        65536,
+        0,
+        196608,
+        65536,
+        131072,
+        131072,
+        131072,
+        0
+      ],
+      "enabled": true,
+      "mix": 1.0
+    }
+  ]
+}
