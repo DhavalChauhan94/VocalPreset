@@ -38,7 +38,7 @@ You need Python 3.11+, Node.js 20+ and ffmpeg. See **[SETUP.md](SETUP.md)** for 
 
 ## Command line
 ```bash
-.venv/bin/python fst_reader.py samples/untitled2.fst presets/studio_air.json   # decode a preset
+.venv/bin/python fst_reader.py samples/untitled2.fst presets/lead/studio_air.json   # decode a preset
 .venv/bin/python engine.py my_vocal.mp3 lead out.wav --sound no_fall [--beat beat.mp3]
 .venv/bin/python match.py out.wav fl_export.wav    # compare with FL Studio's own render
 ```

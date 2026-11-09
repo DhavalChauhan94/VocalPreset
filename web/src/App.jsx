@@ -69,6 +69,11 @@ export default function App() {
     fetch("/api/sounds").then((r) => r.json()).then((d) => setSounds(d.sounds)).catch(() => setErr("Server not reachable"));
   }, []);
   const cur = sounds.find((s) => s.id === sound);
+  // sounds are sorted by the part they were built for; show only the chosen part's presets
+  const partSounds = sounds.filter((s) => s.role === part);
+  useEffect(() => {
+    if (partSounds.length && !partSounds.some((s) => s.id === sound)) setSound(partSounds[0].id);
+  }, [part, sounds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- run a job and poll its progress ----------
   const start = async () => {
@@ -186,7 +191,9 @@ export default function App() {
             Drop a dry vocal and pick a sound rebuilt from real FL Studio presets. It comes back EQ'd, tuned, spaced out and mastered.
           </p>
           <div className="mt-8 hidden gap-8 lg:flex">
-            {[["2", "FL presets"], ["13", "plugins rebuilt"], ["3–15s", "per song"]].map(([n, l]) => (
+            {[[String(sounds.length || "–"), "FL presets"],
+              [String(sounds.reduce((n, s) => n + s.chain.length - (s.skipped?.length ?? 0), 0) || "–"), "plugins rebuilt"],
+              ["3–15s", "per song"]].map(([n, l]) => (
               <div key={l} className="lift-text"><div className="text-3xl font-bold">{n}</div><div className="text-sm text-fg/70">{l}</div></div>
             ))}
           </div>
@@ -202,10 +209,10 @@ export default function App() {
               </span>
             </div>
             <Dropzone label="Drop your vocal here" hint="Dry take: mp3, wav, m4a, WhatsApp voice note or video" file={vocal} onFile={setVocal} />
-            <Label on={!!cur}>Sound</Label>
-            <SoundPicker sounds={sounds} value={sound} onChange={setSound} />
             <Label on>Part</Label>
             <PartPicker value={part} onChange={setPart} />
+            <Label on={!!cur}>Sound <span className="text-mist/70">({partSounds.length} for {part === "adlib" ? "ad-libs" : part === "lead" ? "main vocal" : "backing"})</span></Label>
+            <SoundPicker sounds={partSounds} value={sound} onChange={setSound} />
             {cur?.autotune && (<><Label on>Auto-tune key</Label><KeyPicker value={key} onChange={setKey} /></>)}
             <Label on={!!beat}>Beat</Label>
             <Dropzone compact label="Add a beat" hint="We'll mix and master the full song" file={beat} onFile={setBeat} accent="violet" optional />

@@ -14,6 +14,7 @@ const panel = "z-50 border border-fg/10 bg-pop backdrop-blur-xl w-[var(--button-
 /** Decoded FL presets ("sounds") as tiles. Each dot is one plugin in the real chain; they light up in order when picked. */
 export function SoundPicker({ sounds, value, onChange }) {
   const cur = sounds.find((s) => s.id === value);
+  const isSkipped = (s, i) => (s.skipped ?? []).includes(s.chain[i]);
   if (!cur) return null;
   return (
     <div>
@@ -32,7 +33,7 @@ export function SoundPicker({ sounds, value, onChange }) {
               <div className="mt-3 flex h-4 items-center gap-1" aria-hidden="true">
                 {s.chain.map((_, i) => (
                   <span key={i} style={{ "--i": i }}
-                    className={`chain-dot size-1.5 rounded-full ${on ? "bg-ember shadow-[0_0_6px_var(--ember)]" : "bg-fg/20 group-hover:bg-fg/40"}`} />
+                    className={`chain-dot size-1.5 rounded-full ${isSkipped(s, i) ? "border border-fg/30" : on ? "bg-ember shadow-[0_0_6px_var(--ember)]" : "bg-fg/20 group-hover:bg-fg/40"}`} />
                 ))}
                 {s.autotune && <span className="ml-auto text-xs text-violet-400">auto-tune</span>}
               </div>
@@ -43,10 +44,16 @@ export function SoundPicker({ sounds, value, onChange }) {
       <div key={cur.id} className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 px-1 text-xs text-mist">
         {cur.chain.map((p, i) => (
           <span key={i} className="chip-in whitespace-nowrap" style={{ "--i": i }}>
-            {i > 0 && <span className="mr-1 text-mist/50">→</span>}{p.replace("Fruity ", "")}
+            {i > 0 && <span className="mr-1 text-mist/50">→</span>}
+            {isSkipped(cur, i)
+              ? <span className="text-mist/50 line-through decoration-mist/40" title="Not rebuilt yet: skipped when rendering">{p.replace("Fruity ", "")}</span>
+              : p.replace("Fruity ", "")}
           </span>
         ))}
       </div>
+      {cur.skipped?.length > 0 && (
+        <div className="mt-1 px-1 text-xs text-mist/70">Crossed-out plugins aren't rebuilt yet, so this sound plays without them.</div>
+      )}
     </div>
   );
 }

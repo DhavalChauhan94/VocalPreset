@@ -89,9 +89,12 @@ def sounds():
     out = []
     for sid, meta in engine.SOUNDS.items():
         p = engine.load_sound(sid)
+        live = [s for s in p["chain"] if s["enabled"]]
         out.append({"id": sid, **meta,
-                    "chain": [s["plugin"] for s in p["chain"] if s["enabled"]],
-                    "autotune": any(s["type"] == "pitcher" for s in p["chain"])})
+                    "chain": [s["plugin"] for s in live],
+                    # plugins in the FL chain the engine can't rebuild yet (skipped when rendering)
+                    "skipped": [s["plugin"] for s in live if s["type"] == "unknown"],
+                    "autotune": any(s["type"] == "pitcher" for s in live)})
     return {"sounds": out, "parts": list(engine.ROLE)}
 
 

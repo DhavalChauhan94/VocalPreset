@@ -318,10 +318,10 @@ def _noop(*a, **k):
 
 def run_chain(x, preset, role="lead", bpm=140.0, key="auto", progress=_noop):
     r = ROLE[role]
-    for slot in preset["chain"]:
-        if not slot["enabled"]:
-            continue
-        progress("plugin", slot=slot["slot"], plugin=slot["plugin"])
+    live = [s for s in preset["chain"] if s["enabled"]]
+    for i, slot in enumerate(live):
+        # slot index among ENABLED plugins: that is the list the UI shows
+        progress("plugin", slot=i, plugin=slot["plugin"])
         t, p = slot["type"], slot["params"]
         dry = x
         if t == "limiter":
@@ -357,18 +357,44 @@ def master(x, target_lufs):
     return y
 
 
-SOUNDS = {   # display info for each decoded FL preset in presets/
-    "studio_air": {"name": "Studio Air", "from": "untitled2.fst",
+# Every decoded FL preset, sorted by the part it was built for: presets/<role>/<id>.json.
+# role = the ROLE key the preset was made for (lead = main vocal, backing = backvocals/doubles,
+# adlib = ad-libs). presets/fx/ holds decoded effect presets that are not vocal chains.
+SOUNDS = {
+    # ---- lead (main vocal) ----
+    "studio_air": {"role": "lead", "name": "Studio Air", "from": "untitled2.fst",
                    "blurb": "Clean, bright, roomy"},
-    "no_fall": {"name": "No Fall", "from": "nofalltypeshi.fst",
+    "no_fall": {"role": "lead", "name": "No Fall", "from": "nofalltypeshi.fst",
                 "blurb": "Auto-tuned, echo, wet"},
+    "azadi": {"role": "lead", "name": "Azadi", "from": "azadi type vocals.fst",
+              "blurb": "Tuned, warm, big room"},
+    "singing": {"role": "lead", "name": "Singing", "from": "singing.fst",
+                "blurb": "Hard-tuned for melodies"},
+    "soft": {"role": "lead", "name": "Soft", "from": "SOFT.fst",
+             "blurb": "Untuned, airy, gentle"},
+    "wide_polish": {"role": "lead", "name": "Wide Polish", "from": "untitled.fst",
+                    "blurb": "Glued, bright, wide"},
+    # ---- backing (backvocals / doubles) ----
+    "backvocals": {"role": "backing", "name": "Backvocals", "from": "backvocals.fst",
+                   "blurb": "Airy, wide, filtered"},
+    "doubles": {"role": "backing", "name": "Doubles", "from": "backvocals or doubles.fst",
+                "blurb": "Tuned, chorused, wet"},
+    "doubles_2": {"role": "backing", "name": "Doubles 2", "from": "backvocals or doubles2.fst",
+                  "blurb": "Hard-tuned, wider, drier"},
+    # ---- adlib ----
+    "adlibs": {"role": "adlib", "name": "Ad-libs", "from": "addlips.fst",
+               "blurb": "Filtered, roomy, untuned"},
+    "adlibs_2": {"role": "adlib", "name": "Ad-libs 2", "from": "addlips2.fst",
+                 "blurb": "Tuned, heavy filter"},
+    "tp": {"role": "adlib", "name": "TP", "from": "tp.fst",
+           "blurb": "Tuned, light filter"},
 }
 
 
 def load_sound(sound):
     if sound not in SOUNDS:
         raise ValueError(f"unknown sound {sound}")
-    return json.load(open(os.path.join(HERE, "presets", f"{sound}.json")))
+    return json.load(open(os.path.join(HERE, "presets", SOUNDS[sound]["role"], f"{sound}.json")))
 
 
 def process(vocal_path, role, out_path, beat_path=None, sound="studio_air", key="auto",

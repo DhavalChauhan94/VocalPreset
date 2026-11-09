@@ -12,14 +12,14 @@
                                             GET /api/sounds  (presets + their chains)
  serves web/dist (built UI) at "/"
 
- Offline:  FL Studio .fst ──► fst_reader.py ──► presets/<sound>.json  (read by engine.load_sound)
+ Offline:  FL Studio .fst ──► fst_reader.py ──► presets/<role>/<sound>.json  (read by engine.load_sound)
 ```
 
 ## Files
 | Path | Role |
 |---|---|
 | `fst_reader.py` | Decodes an FL mixer-track preset (`.fst`) into a JSON plugin chain |
-| `presets/*.json` | Decoded presets: one file per "sound" (`studio_air`, `no_fall`) |
+| `presets/<role>/*.json` | Decoded presets, one file per "sound", sorted by part: `lead/` (6), `backing/` (3), `adlib/` (3). `fx/` holds decoded effect presets that are not registered |
 | `engine.py` | All DSP: loading, cleanup, each FL plugin's equivalent, auto-tune, mixing, mastering |
 | `app.py` | FastAPI: job API, file downloads, serves the built UI |
 | `match.py` | Compares our render with an FL Studio export (per-band tone, loudness, peak) |

@@ -2,16 +2,27 @@
 
 ## Add a new sound (about 5 minutes)
 1. In FL Studio, build the vocal chain on **one mixer track**. Then open the track's menu → **File → Save mixer track state as…** to get a `.fst` file.
-2. Copy it into `samples/`, then decode it:
+2. Copy it into `samples/`, then decode it into the folder for the part it was built for: `presets/lead/` (main vocal), `presets/backing/` (backvocals/doubles) or `presets/adlib/`. Effect presets that aren't vocal chains go in `presets/fx/` and are not registered.
    ```bash
-   .venv/bin/python fst_reader.py samples/my_preset.fst presets/my_sound.json
+   .venv/bin/python fst_reader.py samples/my_preset.fst presets/lead/my_sound.json
    ```
    It prints every plugin with its decoded values. Check that each plugin is recognised (not `unknown`).
 3. Register it in `engine.py` → `SOUNDS`:
    ```python
-   "my_sound": {"name": "My Sound", "from": "my_preset.fst", "blurb": "Short description"},
+   "my_sound": {"role": "lead", "name": "My Sound", "from": "my_preset.fst", "blurb": "Short description"},
    ```
-4. Restart the server. The new sound appears in the dropdown, with its plugin chain shown.
+   `role` must match the folder. The UI only shows a sound under its own part.
+4. Restart the server. The new sound appears as a tile under its part, with its plugin chain shown. Plugins the engine can't rebuild are crossed out there and skipped when rendering.
+
+## Current sounds
+| Part | Sounds (source .fst) | Not rebuilt yet (skipped) |
+|---|---|---|
+| Lead | Studio Air (untitled2), No Fall (nofalltypeshi), Azadi (azadi type vocals), Singing (singing), Soft (SOFT), Wide Polish (untitled) | Fruity Compressor (Azadi, Singing, Soft); Delay 2 + Flanger (Soft, small mix); Multiband Compressor, Spreader, Frequency Splitter (Wide Polish) |
+| Backing | Backvocals (backvocals), Doubles (backvocals or doubles), Doubles 2 (backvocals or doubles2) | Stereo Enhancer, Love Philter (all); Chorus + Compressor (Doubles, Doubles 2) |
+| Ad-libs | Ad-libs (addlips), Ad-libs 2 (addlips2), TP (tp) | Love Philter (all three) |
+| fx (not in the app) | underwater (Love Philter + LuxeVerb), grossbeat (Gross Beat) | everything, so they aren't registered |
+
+The most-used unsupported plugins are **Love Philter** (6 sounds), **Fruity Compressor** (5) and **Stereo Enhancer** (3). Supporting these would bring the backing and ad-lib sounds closest to FL.
 
 **Supported plugins:**
 - Fruity Parametric EQ 2

@@ -31,7 +31,7 @@ engine.py       load → pre_clean → run_chain (FL plugins) → part tweaks �
 app.py          /api/sounds · /api/jobs (thread + progress) · /api/file · serves web/dist
 match.py        our render vs FL Studio's render (per-band dB, LUFS, peak)
 web/src/        App.jsx · components/{Orb,DotWaves,Pickers,Parts}.jsx · index.css (theme tokens)
-presets/        decoded sounds (studio_air, no_fall)   samples/  source .fst files
+presets/        decoded sounds, by part: lead/ backing/ adlib/ (+ fx/, not registered)   samples/  source .fst files
 ```
 
 ## Rules (non-negotiable)
