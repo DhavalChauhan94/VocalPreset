@@ -30,7 +30,7 @@ fst_reader.py   .fst → presets/<sound>.json   (FLhd/FLdt events; per-plugin bl
 engine.py       load → pre_clean → run_chain (FL plugins) → part tweaks → mix/master
 app.py          /api/sounds · /api/jobs (thread + progress) · /api/file · serves web/dist
 match.py        our render vs FL Studio's render (per-band dB, LUFS, peak)
-web/src/        App.jsx · components/{Orb,Pickers,Parts}.jsx · index.css (theme tokens)
+web/src/        App.jsx · components/{Orb,DotWaves,Pickers,Parts}.jsx · index.css (theme tokens)
 presets/        decoded sounds (studio_air, no_fall)   samples/  source .fst files
 ```
 

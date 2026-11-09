@@ -86,6 +86,7 @@ Jobs live in memory (`JOBS` dict), so they disappear on restart. Files stay in `
 |---|---|
 | `App.jsx` | State machine: setup → processing → result. Job polling, the A/B audio graph, theme |
 | `components/Orb.jsx` | three.js orb (simplex-noise shader) that reacts to an `AnalyserNode`, a particle ring, a colour for each plugin stage, and light/dark blending |
+| `components/DotWaves.jsx` | Full-screen LED dot-matrix background (one fragment shader, behind the orb at `-z-20`). Red/orange/amber wave ribbons that always move; dots light up around the pointer, and a click or tap sends a ripple. It listens on `window` and stays `pointer-events: none`. It reuses `NOISE` from `Orb.jsx`. Light mode draws faint warm dots |
 | `components/Pickers.jsx` | Headless UI dropdowns (`SoundPicker`, `KeyPicker`) and the `PartPicker` segmented control |
 | `components/Parts.jsx` | `Dropzone`, `Pipeline` (the live plugin list), `Waveform` (canvas, click to seek) |
 | `index.css` | Tailwind 4 `@theme inline` tokens. Colours are CSS variables (`--bg --fg --mist --panel --line --pop`), with dark as the default and `[data-theme=light]` as the override |

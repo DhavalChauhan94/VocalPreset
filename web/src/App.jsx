@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Orb from "./components/Orb.jsx";
+import DotWaves from "./components/DotWaves.jsx";
 import { KeyPicker, PartPicker, SoundPicker } from "./components/Pickers.jsx";
 import { Dropzone, Pipeline, Waveform } from "./components/Parts.jsx";
 
@@ -153,8 +154,9 @@ export default function App() {
 
   return (
     <>
+      <DotWaves light={theme === "light"} />
       <Orb getAnalyser={getAnalyser} busy={busy ? 1 : 0} palette={palette} light={theme === "light"} />
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,transparent_0%,var(--bg)_75%)]" />
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,transparent_0%,color-mix(in_srgb,var(--bg)_35%,transparent)_85%)]" />
 
       <main className="mx-auto flex min-h-full w-full max-w-md flex-col px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-10 lg:max-w-6xl lg:px-10">
         <header className="flex items-center justify-between">
