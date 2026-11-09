@@ -48,14 +48,16 @@ void main(){
   v += exp(-sweep * sweep * 90.0) * 0.10;
   v += (hash(cell + floor(t * 9.0)) - 0.5) * 0.035;
 
-  // pointer + ripples
+  // pointer + ripples (also tracked as "lift": the field rests dimmed and lights up where you touch it)
   v += glow * 0.42;
+  float lift = glow;
   for (int i = 0; i < 4; i++) {
     float age = t - uRip[i].z;
     if (age > 0.0 && age < 2.2) {
       float d = distance(cpx, uRip[i].xy) / uDpr;
       float ring = (d - age * 380.0) / 34.0;
-      v += exp(-ring * ring) * (1.0 - age / 2.2) * 0.55;
+      float rv = exp(-ring * ring) * (1.0 - age / 2.2);
+      v += rv * 0.55; lift += rv;
     }
   }
   v = clamp(v, 0.0, 1.0);
@@ -80,7 +82,9 @@ void main(){
   colL = mix(colL, vec3(0.97, 0.56, 0.16), smoothstep(0.65, 0.95, v));
   float aLight = dotA * mix(0.22, 0.62, v);
 
-  vec3 outC = mix(col * bead, colL, uLight);
+  float bright = mix(0.46, 1.0, clamp(lift * 1.4, 0.0, 1.0));
+  aLight *= mix(0.62, 1.0, clamp(lift * 1.4, 0.0, 1.0));
+  vec3 outC = mix(col * bead * bright, colL, uLight);
   float outA = mix(aDark, aLight, uLight);
   gl_FragColor = vec4(outC * outA, outA);       // premultiplied
 }`;

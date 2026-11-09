@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 
-/** Drag-and-drop or tap-to-pick file slot. */
-export function Dropzone({ label, hint, file, onFile, accent = "ember", optional }) {
+const BARS = Array.from({ length: 34 }, (_, i) => 0.22 + 0.78 * Math.abs(Math.sin(i * 1.7) * Math.sin(i * 0.37 + 0.6)));
+
+/** Drag-and-drop or tap-to-pick file slot. The big one shows an idle waveform that wakes on hover/drag. */
+export function Dropzone({ label, hint, file, onFile, accent = "ember", optional, compact }) {
   const [over, setOver] = useState(false);
   const input = useRef(null);
-  const ring = accent === "ember" ? "border-ember/70 bg-ember/[.06]" : "border-violet/70 bg-violet/[.07]";
+  const tint = accent === "ember" ? "border-ember/60 bg-ember/[.07]" : "border-violet/60 bg-violet/[.08]";
   return (
     <button type="button" onClick={() => input.current.click()}
       onDragOver={(e) => { e.preventDefault(); setOver(true); }}
       onDragLeave={() => setOver(false)}
       onDrop={(e) => { e.preventDefault(); setOver(false); e.dataTransfer.files[0] && onFile(e.dataTransfer.files[0]); }}
-      className={`group relative w-full overflow-hidden rounded-2xl border border-dashed px-4 py-4 text-left transition
-        ${file ? `border-solid ${ring}` : over ? ring : "border-fg/15 bg-fg/[.02] hover:border-fg/30"}`}>
+      className={`group slot relative w-full overflow-hidden rounded-2xl text-left transition duration-200 active:scale-[.99]
+        ${compact ? "px-3.5 py-3" : "px-4 pt-4 pb-3"}
+        ${file || over ? tint : "hover:border-fg/25 hover:bg-fg/[.06]"} ${over ? "scale-[1.01]" : ""}`}>
       <input ref={input} type="file" hidden accept="audio/*,video/*,.mpeg,.opus,.m4a,.wav,.mp3"
         onChange={(e) => e.target.files[0] && onFile(e.target.files[0])} />
       <div className="flex items-center gap-3">
-        <span className={`grid size-10 shrink-0 place-items-center rounded-xl transition ${file ? (accent === "ember" ? "bg-ember text-white" : "bg-violet text-white") : "bg-fg/[.06] text-mist group-hover:text-fg"}`}>
+        <span className={`grid shrink-0 place-items-center rounded-xl transition duration-300 ${compact ? "size-9" : "size-10"}
+          ${file ? (accent === "ember" ? "bg-ember text-white" : "bg-violet text-white") : "bg-fg/[.07] text-mist group-hover:-translate-y-0.5 group-hover:text-fg"}`}>
           {file ? (
             <svg viewBox="0 0 20 20" className="size-5"><path fill="currentColor" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0Z" /></svg>
           ) : (
@@ -24,18 +28,23 @@ export function Dropzone({ label, hint, file, onFile, accent = "ember", optional
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 font-semibold">
-            <span className="truncate">{file ? file.name : label}</span>
-            {optional && !file && <span className="text-[10px] font-medium uppercase tracking-wider text-mist/70">optional</span>}
+            <span className="truncate">{file ? file.name : over ? "Let go to load it" : label}</span>
+            {optional && !file && <span className="text-xs font-normal text-mist/80">optional</span>}
           </div>
           <div className="truncate text-sm text-mist">
-            {file ? `${(file.size / 1048576).toFixed(1)} MB · tap to change` : hint}
+            {file ? `${(file.size / 1048576).toFixed(1)} MB, tap to swap` : hint}
           </div>
         </div>
         {file && optional && (
           <span role="button" onClick={(e) => { e.stopPropagation(); onFile(null); }}
-            className="rounded-lg px-2 py-1 text-xs text-mist hover:bg-fg/10 hover:text-fg">Remove</span>
+            className="rounded-lg px-2 py-1 text-xs text-mist transition hover:bg-fg/10 hover:text-fg">Remove</span>
         )}
       </div>
+      {!compact && (
+        <div className="meter mt-3 flex h-9 items-center justify-between" data-on={!!file} data-over={over} aria-hidden="true">
+          {BARS.map((h, i) => <i key={i} style={{ "--h": h, "--i": i }} />)}
+        </div>
+      )}
     </button>
   );
 }

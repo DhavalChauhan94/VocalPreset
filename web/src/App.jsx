@@ -172,33 +172,40 @@ export default function App() {
 
         <div className="lg:grid lg:flex-1 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-16">
         <section className="rise mt-[18vh] mb-7 sm:mt-[14vh] lg:mt-0 lg:mb-0">
-          <h1 className="text-[2.6rem] leading-[1.02] font-bold tracking-tight lg:text-7xl">
-            Raw vocal in.<br /><span className="grad-text">Mixed vocal out.</span>
+          <h1 className="chrome text-[2.35rem] leading-[1.04] font-extrabold tracking-[-0.02em] sm:text-5xl lg:text-[4.1rem]">
+            Bedroom take.<br />Studio finish.
           </h1>
-          <p className="mt-3 max-w-[34ch] text-mist lg:mt-6 lg:text-lg">
-            Pick a sound built from real FL Studio presets. EQ, auto-tune, reverb, delay and mastering in one tap.
+          <p className="lift-text mt-4 max-w-[36ch] text-[1.02rem] leading-relaxed text-fg/80 lg:mt-6 lg:text-lg">
+            Drop a dry vocal and pick a sound rebuilt from real FL Studio presets. It comes back EQ'd, tuned, spaced out and mastered.
           </p>
           <div className="mt-8 hidden gap-8 lg:flex">
             {[["2", "FL presets"], ["13", "plugins rebuilt"], ["3–15s", "per song"]].map(([n, l]) => (
-              <div key={l}><div className="text-3xl font-bold">{n}</div><div className="text-sm text-mist">{l}</div></div>
+              <div key={l} className="lift-text"><div className="text-3xl font-bold">{n}</div><div className="text-sm text-mist">{l}</div></div>
             ))}
           </div>
         </section>
-        <div className="lg:glass lg:rounded-3xl lg:p-6 lg:shadow-2xl lg:shadow-black/50">
+        <div className="faceplate rounded-3xl p-4 sm:p-5 lg:p-6">
 
         {!job && (
-          <div className="rise space-y-3" style={{ animationDelay: ".08s" }}>
-            <Dropzone label="Drop your vocal" hint="Dry vocal · mp3, wav, m4a, WhatsApp, video" file={vocal} onFile={setVocal} />
-            <Label>Sound</Label>
+          <div className="rise space-y-2.5" style={{ animationDelay: ".08s" }}>
+            <div className="flex items-center justify-between px-1 pb-1">
+              <span className="text-lg font-bold tracking-tight" style={{ fontStretch: "110%" }}>New mix</span>
+              <span className="flex items-center gap-2 text-xs text-mist">
+                {vocal ? "Ready to mix" : "Waiting for a vocal"}<span className="led" data-on={!!vocal} />
+              </span>
+            </div>
+            <Dropzone label="Drop your vocal here" hint="Dry take: mp3, wav, m4a, WhatsApp voice note or video" file={vocal} onFile={setVocal} />
+            <Label on={!!cur}>Sound</Label>
             <SoundPicker sounds={sounds} value={sound} onChange={setSound} />
-            <Label>Part</Label>
+            <Label on>Part</Label>
             <PartPicker value={part} onChange={setPart} />
-            {cur?.autotune && (<><Label>Auto-tune key</Label><KeyPicker value={key} onChange={setKey} /></>)}
-            <Label>Beat</Label>
-            <Dropzone label="Add your beat" hint="We'll mix and master the full song" file={beat} onFile={setBeat} accent="violet" optional />
+            {cur?.autotune && (<><Label on>Auto-tune key</Label><KeyPicker value={key} onChange={setKey} /></>)}
+            <Label on={!!beat}>Beat</Label>
+            <Dropzone compact label="Add a beat" hint="We'll mix and master the full song" file={beat} onFile={setBeat} accent="violet" optional />
             <button disabled={!vocal || !cur} onClick={start}
-              className="btn-glow mt-3 w-full rounded-2xl bg-gradient-to-r from-ember to-amber py-4 text-lg font-semibold text-white transition active:scale-[.98] disabled:opacity-35 disabled:shadow-none">
-              Make it sound pro
+              className="btn-glow btn-sheen mt-3 w-full rounded-2xl bg-gradient-to-b from-[#ff7a4a] to-ember py-4 text-lg font-bold tracking-tight text-white transition duration-200 hover:brightness-110 disabled:opacity-40 disabled:shadow-none"
+              style={{ fontStretch: "108%" }}>
+              {vocal ? "Mix my vocal" : "Add a vocal to start"}
             </button>
             {err && <p className="text-sm text-ember">{err}</p>}
           </div>
@@ -279,8 +286,10 @@ export default function App() {
   );
 }
 
-const Label = ({ children }) => (
-  <div className="px-1 pt-2 text-[11px] font-medium tracking-[.14em] text-mist/80 uppercase">{children}</div>
+const Label = ({ children, on }) => (
+  <div className="flex items-center gap-2 px-1 pt-2 text-sm font-medium text-mist">
+    <span className="led" data-on={!!on} style={{ width: 5, height: 5 }} />{children}
+  </div>
 );
 const Chip = ({ label, value }) => (
   <span className="rounded-full bg-fg/[.06] px-2.5 py-1 text-xs">
