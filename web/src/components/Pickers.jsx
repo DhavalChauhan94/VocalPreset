@@ -23,7 +23,7 @@ export function SoundPicker({ sounds, value, onChange }) {
           return (
             <button key={s.id} role="radio" aria-checked={on} onClick={() => onChange(s.id)}
               className={`group slot relative rounded-2xl p-3.5 text-left text-fg transition duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[.98]
-                ${on ? "border-ember/55 bg-ember/[.08] shadow-[0_0_0_1px_rgb(255_90_54/.25),0_12px_30px_-14px_rgb(255_90_54/.55)]" : "hover:border-fg/25 hover:bg-fg/[.06]"}`}>
+                ${on ? "border-ember/55 bg-ember/[.08] shadow-[0_0_0_1px_color-mix(in_srgb,var(--ember)_25%,transparent),0_12px_30px_-14px_color-mix(in_srgb,var(--ember)_55%,transparent)]" : "hover:border-fg/25 hover:bg-fg/[.06]"}`}>
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold text-fg">{s.name}</span>
                 <span className="led" data-on={on} />
@@ -32,7 +32,7 @@ export function SoundPicker({ sounds, value, onChange }) {
               <div className="mt-3 flex h-4 items-center gap-1" aria-hidden="true">
                 {s.chain.map((_, i) => (
                   <span key={i} style={{ "--i": i }}
-                    className={`chain-dot size-1.5 rounded-full ${on ? "bg-ember shadow-[0_0_6px_#ff5a36]" : "bg-fg/20 group-hover:bg-fg/40"}`} />
+                    className={`chain-dot size-1.5 rounded-full ${on ? "bg-ember shadow-[0_0_6px_var(--ember)]" : "bg-fg/20 group-hover:bg-fg/40"}`} />
                 ))}
                 {s.autotune && <span className="ml-auto text-xs text-violet-400">auto-tune</span>}
               </div>
@@ -102,7 +102,7 @@ export function PartPicker({ value, onChange }) {
   const idx = parts.findIndex((p) => p.id === value);
   return (
     <div className="slot relative grid grid-cols-3 rounded-2xl p-1" role="radiogroup" aria-label="Part">
-      <div className="absolute inset-y-1 left-1 w-[calc((100%-0.5rem)/3)] rounded-xl bg-gradient-to-b from-[#ff7a4a] to-ember shadow-[inset_0_1px_0_rgb(255_255_255/.35),0_6px_18px_-6px_rgb(255_90_54/.7)] transition-transform duration-300 ease-[cubic-bezier(.3,1.3,.5,1)]"
+      <div className="absolute inset-y-1 left-1 w-[calc((100%-0.5rem)/3)] rounded-xl bg-gradient-to-b from-[var(--ember-hi)] to-ember shadow-[inset_0_1px_0_rgb(255_255_255/.35),0_6px_18px_-6px_color-mix(in_srgb,var(--ember)_70%,transparent)] transition-transform duration-300 ease-[cubic-bezier(.3,1.3,.5,1)]"
         style={{ transform: `translateX(${idx * 100}%)` }} />
       {parts.map((p) => (
         <button key={p.id} role="radio" aria-checked={value === p.id} onClick={() => onChange(p.id)}

@@ -77,13 +77,16 @@ void main(){
   col = mix(col, vec3(1.0, 0.80, 0.42), smoothstep(0.90, 1.05, v));
   float aDark = dotA;
 
-  // light ramp: faint warm dots on the cream page
-  vec3 colL = mix(vec3(0.91, 0.78, 0.72), vec3(0.94, 0.27, 0.12), smoothstep(0.2, 0.62, v));
-  colL = mix(colL, vec3(0.97, 0.56, 0.16), smoothstep(0.65, 0.95, v));
-  float aLight = dotA * mix(0.22, 0.62, v);
+  // light ramp: same field in white and blues (pale dot -> sky -> azure -> deep blue at the hottest folds)
+  vec3 dimL = vec3(0.895, 0.93, 0.975);
+  vec3 colL = mix(dimL, vec3(0.80, 0.88, 0.975), smoothstep(0.02, 0.30, v));
+  colL = mix(colL, vec3(0.52, 0.74, 0.97), smoothstep(0.30, 0.56, v));
+  colL = mix(colL, vec3(0.27, 0.57, 0.94), smoothstep(0.66, 0.86, v));
+  colL = mix(colL, vec3(0.11, 0.37, 0.83), smoothstep(0.90, 1.05, v));
+  float aLight = dotA;
 
   float bright = mix(0.46, 1.0, clamp(lift * 1.4, 0.0, 1.0));
-  aLight *= mix(0.62, 1.0, clamp(lift * 1.4, 0.0, 1.0));
+  colL = mix(dimL, colL, mix(0.70, 1.0, clamp(lift * 1.4, 0.0, 1.0))) * mix(1.0, 0.95, smoothstep(0.0, r, dist));
   vec3 outC = mix(col * bead * bright, colL, uLight);
   float outA = mix(aDark, aLight, uLight);
   gl_FragColor = vec4(outC * outA, outA);       // premultiplied

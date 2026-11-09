@@ -101,9 +101,10 @@ export function Waveform({ before, after, showing, progress, onSeek, theme }) {
     const fg = css.getPropertyValue("--fg").trim() || "#fff", bg = css.getPropertyValue("--bg").trim() || "#07060b";
     g.clearRect(0, 0, w, h);
     const grad = g.createLinearGradient(0, 0, w, 0);
-    grad.addColorStop(0, "#ff5a36"); grad.addColorStop(1, "#ffb347");
+    const ember = css.getPropertyValue("--ember").trim() || "#ff5a36", amber = css.getPropertyValue("--amber").trim() || "#ffb347";
+    grad.addColorStop(0, ember); grad.addColorStop(1, amber);
     if (showing === "after") { draw(before, fg, 0.12); draw(after, grad, 0.95); }
-    else { draw(after, "#ff5a36", 0.12); draw(before, theme === "light" ? "#7c3aed" : "#c4b5fd", 0.9); }
+    else { draw(after, ember, 0.12); draw(before, theme === "light" ? "#7c3aed" : "#c4b5fd", 0.9); }
     // dim the unplayed part
     g.globalAlpha = 0.55; g.fillStyle = bg;
     g.fillRect(w * progress, 0, w * (1 - progress), h);

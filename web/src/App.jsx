@@ -8,6 +8,11 @@ const STAGE_PALETTES = [
   ["#ff5a36", "#6d28d9"], ["#ffb347", "#be185d"], ["#22d3ee", "#4f46e5"],
   ["#a78bfa", "#0e7490"], ["#f472b6", "#7c2d12"], ["#34d399", "#1e3a8a"], ["#fde047", "#9d174d"],
 ];
+// light theme: same stage changes, in blues
+const LIGHT_STAGE_PALETTES = [
+  ["#3b8bf6", "#0b3a8c"], ["#7cc8ff", "#1d4ed8"], ["#38bdf8", "#1e3a8a"],
+  ["#93c5fd", "#0e7490"], ["#60a5fa", "#312e81"], ["#5eead4", "#1e40af"], ["#a5d8ff", "#1e3a8a"],
+];
 const fmt = (s) => (isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00");
 
 const THEME_KEY = "vp-theme";
@@ -25,7 +30,7 @@ function useTheme() {
   const theme = choice === "system" ? (sysLight ? "light" : "dark") : choice;
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f6f3ee" : "#07060b");
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f4f8fd" : "#07060b");
     try { localStorage.setItem(THEME_KEY, choice); } catch { /* private mode */ }
   }, [theme, choice]);
   return [theme, choice, setChoice];
@@ -147,8 +152,10 @@ export default function App() {
   useEffect(() => { stop(); setT(0); setShowing("after"); }, [job?.mp3]);
 
   const getAnalyser = useCallback(() => (playing ? an.current : null), [playing]);
-  const palette = busy ? STAGE_PALETTES[(job.slot ?? 0) % STAGE_PALETTES.length]
-    : done && showing === "before" ? ["#a78bfa", "#312e81"] : ["#ff5a36", "#6d28d9"];
+  const lightMode = theme === "light";
+  const stages = lightMode ? LIGHT_STAGE_PALETTES : STAGE_PALETTES;
+  const palette = busy ? stages[(job.slot ?? 0) % stages.length]
+    : done && showing === "before" ? ["#a78bfa", "#312e81"] : lightMode ? ["#4a9bff", "#103f9a"] : ["#ff5a36", "#6d28d9"];
 
   const reset = () => { stop(); setJob(null); };
 
@@ -161,7 +168,7 @@ export default function App() {
       <main className="mx-auto flex min-h-full w-full max-w-md flex-col px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-10 lg:max-w-6xl lg:px-10">
         <header className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="size-2.5 rounded-full bg-ember shadow-[0_0_14px_#ff5a36]" />
+            <span className="size-2.5 rounded-full bg-ember shadow-[0_0_14px_var(--ember)]" />
             <span className="font-semibold tracking-tight">VocalPreset</span>
           </div>
           <div className="flex items-center gap-2">
@@ -180,7 +187,7 @@ export default function App() {
           </p>
           <div className="mt-8 hidden gap-8 lg:flex">
             {[["2", "FL presets"], ["13", "plugins rebuilt"], ["3–15s", "per song"]].map(([n, l]) => (
-              <div key={l} className="lift-text"><div className="text-3xl font-bold">{n}</div><div className="text-sm text-mist">{l}</div></div>
+              <div key={l} className="lift-text"><div className="text-3xl font-bold">{n}</div><div className="text-sm text-fg/70">{l}</div></div>
             ))}
           </div>
         </section>
@@ -203,7 +210,7 @@ export default function App() {
             <Label on={!!beat}>Beat</Label>
             <Dropzone compact label="Add a beat" hint="We'll mix and master the full song" file={beat} onFile={setBeat} accent="violet" optional />
             <button disabled={!vocal || !cur} onClick={start}
-              className="btn-glow btn-sheen mt-3 w-full rounded-2xl bg-gradient-to-b from-[#ff7a4a] to-ember py-4 text-lg font-bold tracking-tight text-white transition duration-200 hover:brightness-110 disabled:opacity-40 disabled:shadow-none"
+              className="btn-glow btn-sheen mt-3 w-full rounded-2xl bg-gradient-to-b from-[var(--ember-hi)] to-ember py-4 text-lg font-bold tracking-tight text-white transition duration-200 hover:brightness-110 disabled:opacity-40 disabled:shadow-none"
               style={{ fontStretch: "108%" }}>
               {vocal ? "Mix my vocal" : "Add a vocal to start"}
             </button>

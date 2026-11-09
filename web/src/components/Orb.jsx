@@ -80,8 +80,8 @@ export default function Orb({ getAnalyser, busy = 0, palette = ["#ff5a36", "#6d2
 
     const uniforms = {
       uTime: { value: 0 }, uLow: { value: 0 }, uMid: { value: 0 }, uHigh: { value: 0 },
-      uBusy: { value: 0 }, uA: { value: new THREE.Color("#ff5a36") },
-      uB: { value: new THREE.Color("#6d28d9") }, uAlpha: { value: 0.85 },
+      uBusy: { value: 0 }, uA: { value: new THREE.Color(state.current.palette[0]) },
+      uB: { value: new THREE.Color(state.current.palette[1]) }, uAlpha: { value: 0.85 },
     };
     const wireUniforms = { ...uniforms, uAlpha: { value: 0.14 } };
     const orb = new THREE.Mesh(
@@ -110,7 +110,7 @@ export default function Orb({ getAnalyser, busy = 0, palette = ["#ff5a36", "#6d2
     pos.set(base);
     const pgeo = new THREE.BufferGeometry();
     pgeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    const pmat = new THREE.PointsMaterial({ size: 0.022, color: "#ffb347", transparent: true,
+    const pmat = new THREE.PointsMaterial({ size: 0.022, color: state.current.palette[0], transparent: true,
       opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending });
     const halo = new THREE.Points(pgeo, pmat);
     halo.rotation.x = 0.42;
