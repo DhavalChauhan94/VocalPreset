@@ -70,15 +70,24 @@ export default function App() {
 
   const poll = async (id, until) => {
     const me = takeNo.current;
-    for (;;) {
+    for (let misses = 0; ;) {
       await new Promise((res) => setTimeout(res, 400));
       if (me !== takeNo.current) return null;
-      const j = await (await fetch(`/api/jobs/${id}`)).json();
+      let r;
+      try { r = await fetch(`/api/jobs/${id}`); misses = 0; } catch (e) {
+        if (++misses < 15) continue;   // ~6 s of retries rides out a server restart
+        throw e;
+      }
+      if (r.status === 404) throw new Error("The server restarted and lost this take. Drop the file again.");
+      const j = await r.json();
       setJob(j);
       if (j.status === "error") throw new Error(j.error);
       if (until.includes(j.status)) return j;
     }
   };
+  // fetch() rejects with a bare "Failed to fetch" when the server is unreachable; say what to do instead
+  const explain = (e) => (e instanceof TypeError
+    ? "Can't reach the VocalPreset server. Make sure it's running (start.bat), then try again." : e.message);
 
   // ---------- 1. drop a vocal -> analysis starts straight away ----------
   const onVocal = async (file) => {
@@ -93,7 +102,7 @@ export default function App() {
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Upload failed");
       await poll(d.id, ["analysed"]);
-    } catch (e) { setErr(e.message); setJob(null); }
+    } catch (e) { setErr(explain(e)); setJob(null); }
   };
 
   // ---------- 2. auto-tune on -> detect the key (once per take) ----------
@@ -104,7 +113,7 @@ export default function App() {
       const d = await r.json();
       if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "Couldn't find the key");
       setKeyInfo(d); setChosenKey(d.key_string);
-    } catch (e) { setKeyError(e.message); } finally { setKeyLoading(false); }
+    } catch (e) { setKeyError(explain(e)); } finally { setKeyLoading(false); }
   };
   useEffect(() => {
     if (tune && job?.id && ["analysed", "done"].includes(job.status) && !keyInfo && !keyLoading && !keyError) detectKey(job.id);
@@ -122,7 +131,7 @@ export default function App() {
       if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "Couldn't start the fix");
       setJob((j) => ({ ...j, status: "fixing", stage: "Planning the fix", slot: 0 }));
       await poll(job.id, ["done"]);
-    } catch (e) { setErr(e.message); setJob((j) => j && { ...j, status: "analysed" }); }
+    } catch (e) { setErr(explain(e)); setJob((j) => j && { ...j, status: "analysed" }); }
   };
   const busy = job?.status === "analysing" || job?.status === "fixing";
   const done = job?.status === "done";
