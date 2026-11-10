@@ -18,6 +18,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+import analysis
 import engine
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -65,6 +66,11 @@ def _run(job_id, tmp, vocal, beat, part, sound, key):
             job.update({k: v for k, v in kw.items() if v is not None})
 
     try:
+        job["stage"] = "Analysing the raw take"
+        try:   # Phantom report for the next step; never allowed to block the mix
+            job["analysis"] = analysis.analyze(vocal)
+        except Exception as e:
+            job["analysis_error"] = str(e)[:300] or type(e).__name__
         wav = os.path.join(OUT, f"{job_id}.wav")
         engine.process(vocal, part, wav, beat, sound, key, progress)
         job["stage"] = "Encoding"

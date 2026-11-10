@@ -22,6 +22,7 @@
 | `presets/<role>/*.json` | Decoded presets, one file per "sound", sorted by part: `lead/` (6), `backing/` (3), `adlib/` (3). `fx/` holds decoded effect presets that are not registered |
 | `engine.py` | All DSP: loading, cleanup, each FL plugin's equivalent, auto-tune, mixing, mastering |
 | `app.py` | FastAPI: job API, file downloads, serves the built UI |
+| `analysis.py` | Raw-take report from **Phantom** (FadeLab, AGPL, local). Called over MCP stdio before mixing; on Windows it runs inside WSL. Failure never blocks the mix |
 | `match.py` | Compares our render with an FL Studio export (per-band tone, loudness, peak) |
 | `web/` | React 18 + Vite 6 + Tailwind 4.1 + three.js + Headless UI |
 | `samples/*.fst` | Source FL presets (raw vocals are git-ignored) |
@@ -37,6 +38,8 @@
 | 201 | Plugin name (UTF-16): starts a new slot |
 | 213 | Plugin state blob: layout is per plugin, see [PRESETS.md](PRESETS.md) |
 | 225 | Mixer params: 12-byte records `(u32 0, u32 id, i32 value)`. Per slot `n`: `base + (n<<16)` = enabled, `+1` = slot mix (12800 = 100%). `base + 0xC0` = track volume |
+
+**Before the engine:** `app._run` asks Phantom for a `full_diagnostic` of the raw upload (`analysis.analyze`). The upload is first converted to a lossless float WAV, because Phantom can't decode WhatsApp/m4a/video. The report is stored on the job for the next step (a LangChain agent). It doesn't change the mix yet.
 
 ## Audio engine pipeline (`engine.process`)
 1. **load**: ffmpeg → 44.1 kHz float32 stereo. Any format works, including video.
@@ -74,9 +77,9 @@
 ## API
 | Method | Path | Body / result |
 |---|---|---|
-| GET | `/api/sounds` | `{sounds:[{id,name,blurb,from,chain[],autotune}], parts:[…]}` |
+| GET | `/api/sounds` | `{sounds:[{id,role,name,blurb,from,chain[],skipped[],autotune}], parts:[…]}` |
 | POST | `/api/jobs` | form: `vocal` (file), `part`, `sound`, `key` (`auto` / `preset` / `"A minor"`), optional `beat` → `{id}` |
-| GET | `/api/jobs/{id}` | `status` (running/done/error), `stage`, `slot`, `elapsed`, `key`, `bpm`, `lufs_raw`, `lufs_out`, `peaks_before`, `peaks_after`, `mp3`, `wav`, `raw`, `seconds` |
+| GET | `/api/jobs/{id}` | `status` (running/done/error), `stage`, `slot`, `elapsed`, `key`, `bpm`, `lufs_raw`, `lufs_out`, `peaks_before`, `peaks_after`, `mp3`, `wav`, `raw`, `seconds`, `analysis` (Phantom `full_diagnostic` of the raw take) or `analysis_error` |
 | GET | `/api/file/{name}` | download (`{id}.mp3`, `{id}.wav` 24-bit, `{id}_raw.mp3` = Before) |
 
 Jobs live in memory (`JOBS` dict), so they disappear on restart. Files stay in `out/jobs/`.
