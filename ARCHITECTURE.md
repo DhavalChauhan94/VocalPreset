@@ -26,6 +26,30 @@ The UI no longer offers presets. The preset engine (`engine.process`, `/api/jobs
    - Clipping and lossy files are never counted as fixed: the damage is baked in, so the score keeps their penalty.
 4. **Polling.** `GET /api/jobs/{id}` reports status `analysing` → `analysed` → `fixing` → `done` (or `error`). It uses the same `stage`/`slot` fields the Pipeline UI already reads.
 
+**Key detection (`keys.py`).** Essentia (the key-service) is made for full mixes. On dry vocals it got the 7 notes right only 62% of the time, and it picked C major for an F# minor take. Now:
+
+1. **Vocal (primary).**
+   - pYIN, then *held notes* (stable within ±30 c for ≥ 100 ms, weighted by duration). Slides and passing pitches are dropped.
+   - The 7-note scale that covers the most held time is chosen.
+   - The tonic among the candidate scales (within 4% fit) is picked from:
+     - Krumhansl-Kessler and Albrecht-Shanahan profiles;
+     - phrase-ending notes (the last held note before a ≥ 250 ms pause);
+     - time on the note;
+     - the longest notes.
+   - Essentia on the vocal is only a +0.15 tie-break vote.
+2. **Beat (optional, most accurate).** `POST /api/takes/{id}/key` accepts a `beat` file, stored in `out/takes`, never served.
+   - The key-service reads the instrumental. Its key is used only if the vocal's held notes fit that scale within 10% of the best scale.
+   - A wrong beat reading therefore can't override a clear vocal.
+3. **Honest output.** `alternatives` (top 4) are shown as one-tap chips. `low_confidence` plus a plain warning appear when another 7-note set fits just as well (< 1% apart), because the melody never sings the note that separates them.
+
+**Measured:**
+- **Benchmark:** 96 synthetic sung melodies in all 24 keys, with ±35 c detune, vibrato, jitter, slides, noise, and phrases ending on the tonic only half the time. Set A is used for weights; held-out set B uses different seeds.
+- **Results:** new detector 88% exact key / **96% right 7 notes** on held-out B. On set A: old detector 81% / 88%, Essentia on the vocal 46% / 62%.
+- **Real take (Recording 261, user says F# minor):**
+  - vocal alone → C# minor, flagged "fits C# minor and F# minor equally", with an F# minor chip;
+  - with an F# minor beat → F# minor;
+  - Heavy auto-tune in F# minor → 29% → 90% of voiced frames within 15 c.
+
 **Studio chain (`fixer.py`), v2.** v1 measured right but sounded over-bright and thin ("laptop mix"). The chain is split into three stages so the Mix panel can re-render fast:
 
 | Stage | Step | What it does |

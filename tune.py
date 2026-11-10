@@ -12,6 +12,7 @@ from scipy.ndimage import binary_dilation, uniform_filter1d
 from scipy.signal import butter, sosfiltfilt
 
 import engine
+import keys
 
 SR = engine.SR
 FRAME_MS = 5.0
@@ -50,8 +51,10 @@ def autotune(x, level, key="auto"):
     """x: (channels, samples) float32. Returns the same shape. Sets autotune.last_key."""
     mono = x.mean(axis=0).astype(np.float64)
     f0, t = pw.harvest(mono, SR, f0_floor=60.0, f0_ceil=700.0, frame_period=FRAME_MS)
-    if not key or key == "auto":
-        key, _ = engine.detect_key(np.where(f0 > 0, 69 + 12 * np.log2(np.maximum(f0, 1e-9) / 440), np.nan))
+    if not key or key == "auto":   # same held-note detector as the UI's key step (keys.py)
+        midi = np.where(f0 > 0, 69 + 12 * np.log2(np.maximum(f0, 1e-9) / 440), np.nan)
+        ranked, _ = keys.rank_keys(midi, hop_s=FRAME_MS / 1000)
+        key = ranked[0]["key"] if ranked else engine.detect_key(midi)[0]
     autotune.last_key = key
     sp = pw.cheaptrick(mono, f0, t, SR)
     ap = pw.d4c(mono, f0, t, SR)

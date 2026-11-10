@@ -1,4 +1,5 @@
 import { KeyPicker, KEYS } from "./Pickers.jsx";
+import { Dropzone } from "./Parts.jsx";
 
 const LEVELS = [
   { id: "light", label: "Light", hint: "Fixes small slips, still sounds natural", amount: 0.6, glide: 0.75 },
@@ -64,7 +65,11 @@ function Piano({ keyString, loading }) {
 }
 
 /** Auto-tune toggle + strength, with the detected key explained on a piano. */
-export default function Autotune({ on, onToggle, level, onLevel, keyInfo, keyLoading, keyError, chosenKey, onKey }) {
+// conventional spelling for a sharp-spelled key ("A# major" -> "Bb major")
+const FLAT = { major: { "C#": "Db", "D#": "Eb", "G#": "Ab", "A#": "Bb" }, minor: { "D#": "Eb", "A#": "Bb" } };
+const spell = (k) => { const [r, m] = k.split(" "); return `${FLAT[m]?.[r] ?? r} ${m}`; };
+
+export default function Autotune({ on, onToggle, level, onLevel, keyInfo, keyLoading, keyError, chosenKey, onKey, beat, onBeat }) {
   const lv = LEVELS.find((l) => l.id === level) ?? LEVELS[1];
   const idx = LEVELS.indexOf(lv);
   const shownKey = chosenKey || keyInfo?.key_string;
@@ -107,7 +112,9 @@ export default function Autotune({ on, onToggle, level, onLevel, keyInfo, keyLoa
               : keyError ? <div className="text-sm text-ember">{keyError}</div>
                 : keyInfo && (
                   <div className="chip-in">
-                    <div className="text-sm text-mist">Your take is in</div>
+                    <div className="flex items-center gap-2 text-sm text-mist">Your take is in
+                      {keyInfo.source === "beat" && <span className="rounded-full bg-ember/15 px-2 py-0.5 text-[11px] font-medium text-ember">from your beat</span>}
+                    </div>
                     <div className="text-xl font-bold tracking-tight" style={{ fontStretch: "108%" }}>{display}</div>
                     <div className="text-xs text-mist">
                       Auto-tune will only use these {SCALE[(shownKey || "").split(" ")[1]]?.length ?? 7} notes, lit up below.
@@ -119,9 +126,28 @@ export default function Autotune({ on, onToggle, level, onLevel, keyInfo, keyLoa
               <div className="mt-3">
                 {keyInfo.low_confidence && (
                   <p className="mb-2 text-sm"><span className="font-medium text-amber">Not 100% sure.</span>{" "}
-                    <span className="text-mist">If you know the key, pick it here. A dry vocal is harder to read than a full song.</span></p>
+                    <span className="text-mist">{keyInfo.warnings?.[0] ?? "If you know the key, pick it here."}</span></p>
                 )}
-                <KeyPicker value={shownKey} onChange={onKey} keys={KEY_OPTIONS} hint="Tap to pick a different key" />
+                {keyInfo.alternatives?.length > 1 && (
+                  <div className="mb-3">
+                    <div className="mb-1 text-xs text-mist">Closest keys, tap to switch:</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {keyInfo.alternatives.slice(0, 4).map((k) => (
+                        <button key={k} onClick={() => onKey(k)} aria-pressed={k === shownKey}
+                          className={`chip-in rounded-full px-3 py-1 text-sm font-semibold transition active:scale-95 ${k === shownKey ? "bg-ember text-white" : "bg-fg/[.07] text-fg hover:bg-fg/[.12]"}`}>
+                          {spell(k)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <KeyPicker value={shownKey} onChange={onKey} keys={KEY_OPTIONS} hint="Or pick any key" />
+                {keyInfo.source !== "beat" && onBeat && (
+                  <div className="mt-3">
+                    <Dropzone compact label="Add your beat for the exact key" hint="We read the key from its chords (not mixed in)"
+                      file={beat} onFile={onBeat} accent="violet" optional />
+                  </div>
+                )}
               </div>
             )}
           </div>

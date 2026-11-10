@@ -30,7 +30,7 @@ fst_reader.py   .fst → presets/<sound>.json   (FLhd/FLdt events; per-plugin bl
 engine.py       load → pre_clean → run_chain (FL plugins) → part tweaks → mix/master
 app.py          /api/takes (analyse → key → fix, the current UI) · legacy /api/jobs + /api/sounds · serves web/dist
 fixer.py        studio chain: PREP (clean/hum/resonance/auto-tune, cached) → POLISH (scaled by Mix) → SPACE (doubler, ducked convolution reverb + ping-pong) → TP master · render() for Mix-panel tweaks
-tune.py         auto-tune: WORLD vocoder <5 kHz on voiced frames, original air/consonants kept   keys.py  key-service + librosa backup
+tune.py         auto-tune: WORLD vocoder <5 kHz on voiced frames, original air/consonants kept   keys.py  vocal held-note key detector (+ beat via key-service)
 analysis.py     Phantom (WSL) full_diagnostic over MCP
 match.py        our render vs FL Studio's render (per-band dB, LUFS, peak)
 web/src/        App.jsx · mixEngine.js (live mixer) · components/{Report,Autotune,MixPanel,Knob,Orb,DotWaves,Pickers,Parts}.jsx · index.css (theme tokens)

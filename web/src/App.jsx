@@ -94,7 +94,7 @@ export default function App() {
   // ---------- 1. drop a vocal -> analysis starts straight away ----------
   const onVocal = async (file) => {
     stop(); takeNo.current += 1;
-    setVocal(file); setErr(""); setKeyInfo(null); setChosenKey(null); setKeyError("");
+    setVocal(file); setErr(""); setKeyInfo(null); setChosenKey(null); setKeyError(""); setBeat(null);
     if (!file) { setJob(null); return; }
     setJob({ status: "analysing", stage: "Uploading" });
     try {
@@ -108,10 +108,13 @@ export default function App() {
   };
 
   // ---------- 2. auto-tune on -> detect the key (once per take) ----------
-  const detectKey = async (id) => {
+  const [beat, setBeat] = useState(null);
+  const detectKey = async (id, beatFile) => {
     setKeyLoading(true); setKeyError("");
     try {
-      const r = await fetch(`/api/takes/${id}/key`, { method: "POST" });
+      const fd = new FormData();
+      if (beatFile) fd.append("beat", beatFile);
+      const r = await fetch(`/api/takes/${id}/key`, { method: "POST", body: fd });
       const d = await r.json();
       if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "Couldn't find the key");
       setKeyInfo(d); setChosenKey(d.key_string);
@@ -285,7 +288,8 @@ export default function App() {
                 <span className="text-sm font-medium text-ember">See report ↓</span>
               </a>
               <Autotune on={tune} onToggle={setTune} level={level} onLevel={setLevel} keyInfo={keyInfo}
-                keyLoading={keyLoading} keyError={keyError} chosenKey={chosenKey} onKey={setChosenKey} />
+                keyLoading={keyLoading} keyError={keyError} chosenKey={chosenKey} onKey={setChosenKey}
+                beat={beat} onBeat={(f) => { setBeat(f); if (f) detectKey(job.id, f); }} />
             </>)}
             <button disabled={job?.status !== "analysed" || (tune && (keyLoading || !chosenKey))} onClick={fix}
               className="btn-glow btn-sheen mt-3 w-full rounded-2xl bg-gradient-to-b from-[var(--ember-hi)] to-ember py-4 text-lg font-bold tracking-tight text-white transition duration-200 hover:brightness-110 disabled:opacity-40 disabled:shadow-none"

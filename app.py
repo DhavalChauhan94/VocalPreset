@@ -255,11 +255,17 @@ async def create_take(vocal: UploadFile = File(...)):
 
 
 @app.post("/api/takes/{tid}/key")
-def take_key(tid: str):
+def take_key(tid: str, beat: UploadFile | None = File(None)):
+    """Key for auto-tune from the vocal, or (most accurate) from the beat the user adds."""
     t = _take(tid, "analysed", "done")
+    if beat is not None and beat.filename:
+        ext = os.path.splitext(beat.filename)[1].lower()
+        path = _save_upload(beat, TAKES)
+        t["beat"] = os.path.join(TAKES, f"{tid}_beat{ext if ext in _MEDIA_EXT else '.bin'}")   # never served
+        os.replace(path, t["beat"])
     try:
-        t["key_info"] = keys.detect(t["input"])
-    except ValueError as e:      # silent audio
+        t["key_info"] = keys.detect(t["input"], t.get("beat"))
+    except ValueError as e:      # silent audio / no sung notes
         raise HTTPException(422, str(e))
     return t["key_info"]
 
