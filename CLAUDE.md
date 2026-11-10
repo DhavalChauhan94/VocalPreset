@@ -33,7 +33,7 @@ fixer.py        studio chain: PREP (clean/hum/resonance/auto-tune, cached) → P
 tune.py         auto-tune: WORLD vocoder <5 kHz on voiced frames, original air/consonants kept   keys.py  key-service + librosa backup
 analysis.py     Phantom (WSL) full_diagnostic over MCP
 match.py        our render vs FL Studio's render (per-band dB, LUFS, peak)
-web/src/        App.jsx · components/{Report,Autotune,MixPanel,Orb,DotWaves,Pickers,Parts}.jsx · index.css (theme tokens)
+web/src/        App.jsx · mixEngine.js (live mixer) · components/{Report,Autotune,MixPanel,Knob,Orb,DotWaves,Pickers,Parts}.jsx · index.css (theme tokens)
 presets/        decoded sounds, by part: lead/ backing/ adlib/ (+ fx/, not registered)   samples/  source .fst files
 ```
 
@@ -44,7 +44,7 @@ presets/        decoded sounds, by part: lead/ backing/ adlib/ (+ fx/, not regis
 4. **Never use pedalboard's `Limiter` as a ceiling.** It's a JUCE maximiser that adds about 4 dB. Use `brickwall()` / `ceiling()`.
 5. **Never pass a per-sample pitch array to `time_stretch`.** It clicks at every 1024-sample chunk. Use `_shift_by_notes()`, which applies a constant shift per note with crossfades.
 6. **UI colours come from CSS variables** (`--bg --fg --mist --panel --line --pop`) through the Tailwind tokens `bg`, `fg`, `mist` and so on. Never hard-code white or black on neutral surfaces, or light mode breaks. `text-white` is fine only on ember/violet fills.
-7. **The Web Audio graph binds to the `<audio>` elements once.** Keep both elements always mounted and change only `src`.
+7. **The result player is `web/src/mixEngine.js`** (decoded stems, sample-accurate). It mirrors `fixer.space()`/`mixdown()` using the numbers in `fixer.FX` and the server's IRs (`/api/ir/`). Change both sides together, or the preview and the download drift apart.
 8. **Values marked "check" in PRESETS.md are unverified.** Don't present them as exact FL settings.
 9. **Back up a file before a risky edit** (`cp -a f f.bak-$(date +%Y%m%d-%H%M%S)`). Backups are git-ignored.
 

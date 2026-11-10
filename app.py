@@ -30,7 +30,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "out", "jobs")          # generated mp3/wav, served by /api/file
 TAKES = os.path.join(HERE, "out", "takes")       # raw uploads: never served
 # Only our own render names can be downloaded, never an uploaded file (stops stored HTML/SVG from our origin).
-_SERVABLE = re.compile(r"^[0-9a-f]{12}(_raw|_v\d{1,4})?\.(mp3|wav)$")
+_SERVABLE = re.compile(r"^[0-9a-f]{12}(_raw|_v\d{1,4})?\.(mp3|wav)$|^[0-9a-f]{12}_s[01]\.flac$")
 _MEDIA_EXT = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".mpeg", ".mp4", ".mov", ".webm", ".3gp", ".amr", ".wma", ".aiff", ".aif"}
 DIST = os.path.join(HERE, "web", "dist")
 os.makedirs(OUT, exist_ok=True)
@@ -176,7 +176,10 @@ def _fix_take(tid, autotune, key):
         wav = os.path.join(OUT, f"{tid}.wav")
         dry = os.path.join(TAKES, f"{tid}_dry.wav")      # no reverb: Phantom hears reverb tails as noise
         t.update(settings=fixer.settings(), mix_version=0)  # each "Fix" starts from the one-click mix
-        fixer.fix(t["input"], wav, steps, progress, dry_path=dry, prep_path=os.path.join(TAKES, f"{tid}_prep.npy"))
+        stems = [os.path.join(OUT, f"{tid}_s{i}.flac") for i in (0, 1)]   # for the live Mix rack in the browser
+        duck = fixer.fix(t["input"], wav, steps, progress, dry_path=dry, stem_paths=stems)
+        t.update(stems=[f"/api/file/{tid}_s{i}.flac?t={int(time.time())}" for i in (0, 1)],
+                 duck=np.round(duck, 4).tolist(), fx=fixer.FX)
         t.update(stage="Checking the result", slot=len(steps))
         _ffmp3(wav, wav[:-4] + ".mp3")
         y, _ = engine.sf.read(wav, always_2d=True)
@@ -195,22 +198,22 @@ def _fix_take(tid, autotune, key):
 
 
 def _mix_take(tid, version, s):
-    """Re-render polish + space + master from the cached cleaned/tuned vocal. Newest tweak wins."""
+    """Export: render the exact Mix-rack settings from the stems (the browser plays them live)."""
     t = JOBS[tid]
     try:
-        prep = np.load(os.path.join(TAKES, f"{tid}_prep.npy"))
+        s0, s1 = (fixer.read_stem(os.path.join(OUT, f"{tid}_s{i}.flac")) for i in (0, 1))
         name = f"{tid}_v{version}"
         wav = os.path.join(OUT, f"{name}.wav")
-        fixer.render(prep, s, wav)
-        if t.get("mix_version") != version:       # a newer tweak arrived meanwhile: drop this render
+        fixer.render(s0, s1, np.asarray(t["duck"], dtype=np.float32), s, wav)
+        if t.get("mix_version") != version:       # a newer export arrived meanwhile: drop this one
             os.unlink(wav)
             return
         _ffmp3(wav, wav[:-4] + ".mp3")
         y, _ = engine.sf.read(wav, always_2d=True)
         old = [t.get("wav"), t.get("mp3")]
-        t.update(settings=s, lufs_out=round(float(engine.lufs(y.T)), 2), peaks_after=_peaks(wav),
+        t.update(settings=s, lufs_out=round(float(engine.lufs(y.T)), 2),
                  wav=f"/api/file/{name}.wav", mp3=f"/api/file/{name}.mp3", status="done", stage="Done")
-        for url in old:                           # previous tweak's files (never the original render)
+        for url in old:                           # previous export's files (never the original render)
             if url and "_v" in url:
                 try:
                     os.unlink(os.path.join(OUT, url.rsplit("/", 1)[1]))
@@ -219,7 +222,22 @@ def _mix_take(tid, version, s):
     except Exception as e:
         if t.get("mix_version") == version:
             print(f"mix {tid}: {e}")
-            t.update(status="done", stage="Done", mix_error="Couldn't apply that change. Try again.")
+            t.update(status="done", stage="Done", mix_error="Couldn't export that mix. Try again.")
+
+
+IR_DIR = os.path.join(HERE, "out", "ir")
+os.makedirs(IR_DIR, exist_ok=True)
+
+
+@app.get("/api/ir/{style}.wav")
+def reverb_ir(style: str):
+    """Reverb impulse responses for the browser's ConvolverNode: the same ones the server renders with."""
+    if style not in fixer.REVERB_STYLES:
+        raise HTTPException(404)
+    path = os.path.join(IR_DIR, f"{style}.wav")
+    if not os.path.exists(path):
+        fixer.write_ir(style, path)
+    return FileResponse(path, media_type="audio/wav")
 
 
 @app.post("/api/takes")
@@ -283,12 +301,12 @@ class MixRequest(BaseModel):
 @app.post("/api/takes/{tid}/mix")
 def take_mix(tid: str, req: MixRequest):
     t = _take(tid, "done", "mixing")
-    if not os.path.exists(os.path.join(TAKES, f"{tid}_prep.npy")):
+    if "duck" not in t:
         raise HTTPException(409, "fix the take first")
     s = fixer.settings() if req.reset else fixer.settings(
         {**t.get("settings", {}), **req.model_dump(exclude_none=True, exclude={"reset"})})   # clamps + validates
     version = t.get("mix_version", 0) + 1
-    t.update(status="mixing", stage="Updating your mix", mix_version=version, mix_error=None)
+    t.update(status="mixing", stage="Exporting your mix", mix_version=version, mix_error=None)
     threading.Thread(target=_mix_take, args=(tid, version, s), daemon=True).start()
     return {"version": version, "settings": s}
 

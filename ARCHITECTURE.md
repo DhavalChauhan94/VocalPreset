@@ -48,11 +48,24 @@ The UI no longer offers presets. The preset engine (`engine.process`, `/api/jobs
 - **TARGET v2** (dB vs 1 kHz, loud frames, marked **check**): `[-4, -5.5, -5, 0, -4, -9, -14, -19]` across 113 Hz–12.8 kHz. That's warm body and a top end 4–5 dB below v1.
 - **Brightness/Warmth** tilt the target by up to ±6 / ±3 dB. `target_curve()` holds the tilt shapes.
 
-**Mix panel:** `POST /api/takes/{id}/mix` takes any of `mix reverb reverb_style delay delay_style width brightness warmth` (or `reset`).
-- `fixer.settings()` clamps and validates the values.
-- A thread runs `fixer.render(prep, s)` (polish + space + master) and writes `{id}_v{n}.mp3/wav`. The newest version wins and older version files are deleted.
-- The UI keeps playing from the same position when the new render loads.
-- Mix 0% = the cleaned/tuned voice only, with no polish and no effects. It scales processing rather than blending raw with processed, which would comb-filter and, with auto-tune, sound out of tune.
+**Mix rack (live).** The fix writes two level-matched mono stems (-16 LUFS, 24-bit FLAC, sample-accurate) plus the ducking curve (100 Hz), and the job carries `fixer.FX`:
+- `{id}_s0.flac`: your cleaned/tuned voice;
+- `{id}_s1.flac`: the polished voice.
+
+`web/src/mixEngine.js` decodes the stems and rebuilds `fixer.mixdown()` + `space()` in Web Audio:
+- the Mix crossfade s0↔s1;
+- Warmth/Brightness shelves (biquads at Q 0.7071, the same as pedalboard's shelves on the server);
+- the doubler (LFO-modulated DelayNodes);
+- a 2nd-order Butterworth send into a ConvolverNode, using the server's own IRs from `/api/ir/{room|plate|hall}.wav` with normalization off;
+- a feedback ping-pong echo;
+- ducking via `setValueCurveAtTime` with the server's curve;
+- a preview limiter.
+
+**Every knob changes the audio graph directly, with no server call** (measured: Mix to 45% in 32 ms while playing).
+
+**Download** = `POST /api/takes/{id}/mix` with the rack settings. The server runs `fixer.render(s0, s1, duck, s)` and writes the true-peak -12 LUFS master as `{id}_v{n}`; the newest export wins. It's skipped when the settings are unchanged.
+
+The **Mix** knob is plain dry/wet between the two stems. Both have the same tuning and no latency between them, so there's no comb filtering.
 
 **Measured on Recording 154 with v2:**
 - Phantom score 68 → 98 (off/light), 92 (heavy), 82 (medium; mud and SNR sit right at Phantom's limits)

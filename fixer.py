@@ -15,7 +15,7 @@ against real studio vocals with match.py before treating it as final.
 """
 import numpy as np
 import librosa
-from pedalboard import Compressor, Delay, HighpassFilter, HighShelfFilter, LowpassFilter, PeakFilter, Pedalboard
+from pedalboard import Compressor, Delay, HighShelfFilter, LowShelfFilter, PeakFilter, Pedalboard
 from scipy.ndimage import uniform_filter, uniform_filter1d
 from scipy.signal import butter, fftconvolve, iirnotch, resample_poly, sosfilt, sosfiltfilt, tf2sos
 
@@ -111,7 +111,8 @@ def plan(report, autotune="off", key=None):
 # mix scales everything (0 = your cleaned, tuned voice only; 1 = full studio chain). The rest are 0..1
 # except brightness/warmth (-1..1, 0 = our balance). Defaults are the one-click result.
 DEFAULTS = {"mix": 1.0, "reverb": 0.35, "reverb_style": "plate", "delay": 0.2, "delay_style": "eighth",
-            "width": 0.45, "brightness": 0.0, "warmth": 0.3}
+            "width": 0.45, "brightness": 0.0, "warmth": 0.0}
+POLISH_AT = {"mix": 1.0, "brightness": 0.0, "warmth": 0.3}   # how the polished stem is always made
 REVERB_STYLES = {"room": (0.7, 0.008), "plate": (1.8, 0.025), "hall": (2.9, 0.04)}   # RT60 s, pre-delay s
 DELAY_STYLES = {"slap": 0.11, "eighth": 0.214, "quarter": 0.428}                     # seconds (1/8, 1/4 at ~140 bpm)
 
@@ -295,6 +296,19 @@ def reverb_ir(style):
     return _IR_CACHE[style]
 
 
+# Shared by the server render and the browser's live engine (sent to the UI as job["fx"]), so the
+# preview and the download are the same mix. 2nd-order Butterworth = a Web Audio biquad at Q 0.7071.
+FX = {"send_hp": 300.0, "send_lp": 8500.0, "reverb_gain": 0.55, "delay_gain": 0.5, "delay_fb": 0.32,
+      "delay_lp": 4500.0, "delays": DELAY_STYLES, "doubler": [[0.014, 0.0007, 0.31], [0.021, 0.0009, 0.23]],
+      "doubler_db": -8.0, "doubler_hp": 220.0, "doubler_lp": 10000.0, "bright_hz": 8000.0, "bright_db": 6.0,
+      "warm_hz": 200.0, "warm_db": 3.0, "duck_rate": 100}
+STEM_LUFS = -16.0
+
+
+def _bq(kind, f, y):
+    return sosfilt(butter(2, f, kind, fs=SR, output="sos"), y, axis=-1).astype(np.float32)
+
+
 def _duck(y, depth=0.55):
     """Gain for effect returns: dips while the voice is loud, blooms in the gaps (keeps the words clear)."""
     env = uniform_filter1d(np.abs(y), int(SR * 0.01))
@@ -312,35 +326,71 @@ def _duck(y, depth=0.55):
     return 1 - depth * norm
 
 
+def duck_curve(polished):
+    """The ducking gain at FX["duck_rate"] Hz: the browser schedules exactly these points."""
+    return _duck(polished)[:: SR // FX["duck_rate"]].astype(np.float32)
+
+
+def _duck_at(curve, n):
+    """Curve back to per-sample, linear between points (what Web Audio's setValueCurveAtTime does)."""
+    return np.interp(np.arange(n), np.arange(len(curve)) * (SR // FX["duck_rate"]), curve).astype(np.float32)
+
+
 def doubler(y, amount):
     """Two modulated copies (14/21 ms, slow wobble = a few cents of drift) panned L/R: width + richness."""
     n = np.arange(len(y))
     out = []
-    for base, depth, rate in ((0.014, 0.0007, 0.31), (0.021, 0.0009, 0.23)):
+    for base, depth, rate in FX["doubler"]:
         d = (base + depth * np.sin(2 * np.pi * rate * n / SR)) * SR
         out.append(np.interp(n - d, n, y, left=0.0))
-    st = Pedalboard([HighpassFilter(220), LowpassFilter(10000)])(np.stack(out).astype(np.float32), SR)
-    return st * (amount * 10 ** (-8 / 20))
+    st = _bq("low", FX["doubler_lp"], _bq("high", FX["doubler_hp"], np.stack(out)))
+    return st * (amount * 10 ** (FX["doubler_db"] / 20))
 
 
-def space(y, s):
-    """Mono dry -> stereo: dry + doubler + ducked convolution reverb + ducked ping-pong delay."""
+def _echo(x, t, first=None):
+    """Feedback delay: y[n] = x[n-D] + fb*y[n-D] (pedalboard Delay = a Web Audio DelayNode in a feedback loop)."""
+    fx = [Delay(delay_seconds=first, feedback=0, mix=1.0)] if first else []
+    return Pedalboard(fx + [Delay(delay_seconds=2 * t, feedback=FX["delay_fb"], mix=1.0)])(x[None], SR)[0]
+
+
+def space(y, s, duck):
+    """Mono vocal -> stereo: dry + doubler + ducked convolution reverb + ducked ping-pong echo."""
     a = s["mix"]
     st = np.stack([y, y])
     if s["width"] * a > 0:
         st = st + doubler(y, s["width"] * a)
-    send = Pedalboard([HighpassFilter(300), LowpassFilter(8500)])(st, SR)
-    duck = _duck(y)
+    send = _bq("low", FX["send_lp"], _bq("high", FX["send_hp"], st))
+    d = _duck_at(duck, len(y))
     if s["reverb"] * a > 0:
-        wet = np.stack([fftconvolve(send[c], reverb_ir(s["reverb_style"])[c])[: len(y)] for c in (0, 1)])
-        st = st + wet * duck * (0.55 * s["reverb"] * a)
+        ir = reverb_ir(s["reverb_style"])
+        wet = np.stack([fftconvolve(send[c], ir[c])[: len(y)] for c in (0, 1)])
+        st = st + wet * d * (FX["reverb_gain"] * s["reverb"] * a)
     if s["delay"] * a > 0:
         t = DELAY_STYLES[s["delay_style"]]
-        echo_r = Pedalboard([Delay(delay_seconds=t, feedback=0, mix=1.0),
-                             Delay(delay_seconds=2 * t, feedback=0.32, mix=1.0), LowpassFilter(4500)])(send[1:2], SR)
-        echo_l = Pedalboard([Delay(delay_seconds=2 * t, feedback=0.32, mix=1.0), LowpassFilter(4500)])(send[0:1], SR)
-        st = st + np.concatenate([echo_l, echo_r]) * duck * (0.5 * s["delay"] * a)
+        echo = np.stack([_echo(send[0], t), _echo(send[1], t, first=t)])      # L: 2t, 4t.. R: t, 3t..
+        st = st + _bq("low", FX["delay_lp"], echo) * d * (FX["delay_gain"] * s["delay"] * a)
     return st
+
+
+def tone_knobs(y, s):
+    """Brightness / Warmth knobs: shelves on the vocal, identical to the browser's biquads (Q 0.7071)."""
+    fx = []
+    if s["warmth"]:
+        fx.append(LowShelfFilter(FX["warm_hz"], FX["warm_db"] * s["warmth"], 0.7071))
+    if s["brightness"]:
+        fx.append(HighShelfFilter(FX["bright_hz"], FX["bright_db"] * s["brightness"], 0.7071))
+    return _pb(fx, y)
+
+
+def mixdown(s0, s1, duck, s):
+    """Mix knob = dry/wet between your cleaned voice (s0) and the polished one (s1). Same tuning and no
+    latency between them, so blending is plain parallel processing (no comb filtering)."""
+    v = (1 - s["mix"]) * s0 + s["mix"] * s1
+    return space(tone_knobs(v, s), s, duck)
+
+
+def render(s0, s1, duck, s, out_path):
+    engine.save(master(mixdown(s0, s1, duck, s)).astype(np.float32), out_path)
 
 
 def _tp_envelope(st):
@@ -412,46 +462,52 @@ def _polish_step(y, sid, s):
     return y
 
 
-def polish(prep, s):
+def polish(prep, s=POLISH_AT):
     y = prep
     for sid in POLISH:
         y = _polish_step(y, sid, s).astype(np.float32)
     return y
 
 
-def render(prep, s, out_path, dry_path=None):
-    """Polish + space + master a prepared (cleaned/tuned) vocal at settings s. Fast: no auto-tune."""
-    dry = polish(prep, s)
-    engine.save(master(space(dry, s)).astype(np.float32), out_path)
-    if dry_path:
-        engine.save(master(np.stack([dry, dry])).astype(np.float32), dry_path)
-    return dry
-
-
-def fix(in_path, out_path, steps, progress=engine._noop, dry_path=None, prep_path=None, s=None):
-    """Full fix at settings s (defaults = one-click). prep_path caches the cleaned/tuned vocal (.npy) so
-    later Mix-panel tweaks only re-run polish + space + master. dry_path: same vocal mastered without
-    reverb/echo, for Phantom (it reads reverb tails as noise)."""
-    s = settings(s)
+def fix(in_path, out_path, steps, progress=engine._noop, dry_path=None, stem_paths=None):
+    """One-click fix. Writes the finished vocal (default settings) to out_path and returns the duck curve.
+    stem_paths=(s0, s1): your cleaned/tuned voice and the polished voice, level-matched at STEM_LUFS, for the
+    live Mix rack. dry_path: polished vocal mastered without reverb/echo, for Phantom (it reads tails as noise)."""
     tune.autotune.last_key = None
     y = engine.load(in_path).mean(axis=0)
-    dry = None
+    prep = None
     for i, step in enumerate(steps):
         progress("plugin", slot=i, plugin=step["label"])
         if step["id"] in PREP:
             y = _prep_step(y, step).astype(np.float32)
         elif step["id"] in POLISH:
-            if prep_path and dry is None:
-                np.save(prep_path, y)
-                dry = True
-            y = _polish_step(y, step["id"], s).astype(np.float32)
-    if prep_path and dry is None:
-        np.save(prep_path, y)
-    engine.save(master(space(y, s)).astype(np.float32), out_path)
+            if prep is None:
+                prep = y
+            y = _polish_step(y, step["id"], POLISH_AT).astype(np.float32)
+    s0 = engine.to_lufs((y if prep is None else prep)[None], STEM_LUFS)[0].astype(np.float32)
+    s1 = engine.to_lufs(y[None], STEM_LUFS)[0].astype(np.float32)
+    duck = duck_curve(s1)
+    render(s0, s1, duck, settings(), out_path)
+    if stem_paths:
+        for path, stem in zip(stem_paths, (s0, s1)):
+            write_stem(path, stem)
     if dry_path:
-        engine.save(master(np.stack([y, y])).astype(np.float32), dry_path)
+        engine.save(master(np.stack([s1, s1])).astype(np.float32), dry_path)
     progress("meta", key=tune.autotune.last_key)
-    return out_path
+    return duck
+
+
+def write_stem(path, mono):
+    """Stems for the browser: 24-bit FLAC, sample-accurate (mp3 adds padding that would misalign them)."""
+    engine.sf.write(path, np.clip(mono, -1, 1), SR, subtype="PCM_24", format="FLAC")
+
+
+def read_stem(path):
+    return engine.sf.read(path, dtype="float32")[0]
+
+
+def write_ir(style, path):
+    engine.sf.write(path, reverb_ir(style).T, SR, subtype="FLOAT")
 
 
 def score(report, before=None):

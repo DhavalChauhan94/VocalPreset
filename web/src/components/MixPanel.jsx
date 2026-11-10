@@ -1,59 +1,52 @@
-import { useEffect, useRef, useState } from "react";
+import Knob from "./Knob.jsx";
 
-const SLIDERS = [
-  { id: "mix", label: "Mix", hint: "How much of our studio processing you hear. 0% is your own cleaned-up voice.", min: 0 },
-  { id: "reverb", label: "Reverb", hint: "The room around your voice. More = bigger, dreamier.", min: 0 },
-  { id: "delay", label: "Echo", hint: "Repeats the ends of your words, left and right.", min: 0 },
-  { id: "width", label: "Width", hint: "A subtle double that makes the vocal sound wider and richer.", min: 0 },
-  { id: "brightness", label: "Brightness", hint: "Darker and smoother, or brighter and crisper.", min: -1 },
-  { id: "warmth", label: "Warmth", hint: "Thinner, or fuller with tape-style warmth.", min: -1 },
+const pct = (v) => `${Math.round(v * 100)}%`;
+const signed = (v) => (Math.round(v * 100) === 0 ? "0" : `${v > 0 ? "+" : ""}${Math.round(v * 100)}`);
+const KNOBS = [
+  { id: "mix", label: "Mix", format: pct, hint: "How much of our studio sound you hear" },
+  { id: "reverb", label: "Reverb", format: pct, hint: "The room around your voice" },
+  { id: "delay", label: "Echo", format: pct, hint: "Repeats, left and right" },
+  { id: "width", label: "Width", format: pct, hint: "A double that sounds bigger" },
+  { id: "brightness", label: "Brightness", format: signed, min: -1, hint: "Darker or crisper" },
+  { id: "warmth", label: "Warmth", format: signed, min: -1, hint: "Thinner or fuller" },
 ];
-const STYLES = {
-  reverb_style: { label: "Reverb type", options: [["room", "Room"], ["plate", "Plate"], ["hall", "Hall"]] },
-  delay_style: { label: "Echo timing", options: [["slap", "Slap"], ["eighth", "1/8"], ["quarter", "1/4"]] },
-};
-const pct = (v, min) => (min < 0 ? `${v > 0 ? "+" : ""}${Math.round(v * 100)}` : `${Math.round(v * 100)}%`);
+const STYLES = [
+  { id: "reverb_style", label: "Reverb", options: [["room", "Room"], ["plate", "Plate"], ["hall", "Hall"]] },
+  { id: "delay_style", label: "Echo", options: [["slap", "Slap"], ["eighth", "1/8"], ["quarter", "1/4"]] },
+];
 
-/** Post-mix tweaks. Sliders move instantly; the server re-renders ~0.5 s after you let go. */
-export default function MixPanel({ settings, busy, error, onChange, onReset }) {
-  const [local, setLocal] = useState(settings);
-  const timer = useRef(null), pending = useRef({});
-  useEffect(() => { if (!Object.keys(pending.current).length) setLocal(settings); }, [settings]);
-  const send = (patch, now) => {
-    setLocal((s) => ({ ...s, ...patch }));
-    pending.current = { ...pending.current, ...patch };   // several quick moves go out together
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => { const p = pending.current; pending.current = {}; onChange(p); }, now ? 0 : 450);
-  };
-  if (!local) return null;
+/** The mix rack: every control changes the sound you're hearing instantly (mixed live in the browser). */
+export default function MixPanel({ settings, defaults, ready, onChange, onReset }) {
+  if (!settings) return null;
   return (
-    <div className="slot mt-4 rounded-2xl p-4">
+    <div className="rack mt-4 rounded-2xl p-4">
       <div className="flex items-center justify-between">
-        <div className="font-semibold">Shape your mix</div>
+        <div>
+          <div className="font-semibold tracking-tight" style={{ fontStretch: "108%" }}>Mix rack</div>
+          <div className="text-xs text-mist">Turn a knob while it plays. Double-click a knob to reset it.</div>
+        </div>
         <span className="flex items-center gap-2 text-xs text-mist">
-          {busy ? "Updating…" : "Live"}<span className="led" data-on={!busy} />
+          {ready ? "Live" : "Loading…"}<span className="led" data-on={ready} />
         </span>
       </div>
-      <div className="mt-3 space-y-3.5">
-        {SLIDERS.map((sl) => (
-          <label key={sl.id} className="block">
-            <div className="flex items-baseline justify-between text-sm">
-              <span className="font-medium">{sl.label}</span>
-              <span className="font-mono text-xs text-mist tabular-nums">{pct(local[sl.id], sl.min)}</span>
-            </div>
-            <input type="range" min={sl.min} max={1} step={0.01} value={local[sl.id]}
-              onChange={(e) => send({ [sl.id]: Number(e.target.value) })}
-              className="mt-1 w-full" aria-label={sl.label} />
-            <div className="text-xs text-mist">{sl.hint}</div>
-          </label>
+
+      <div className={`mt-4 grid grid-cols-3 gap-x-2 gap-y-4 transition ${ready ? "" : "pointer-events-none opacity-40"}`}>
+        {KNOBS.map((k) => (
+          <div key={k.id} className="flex flex-col items-center" title={k.hint}>
+            <Knob label={k.label} value={settings[k.id]} min={k.min ?? 0} max={1} def={defaults?.[k.id] ?? 0}
+              format={k.format} onChange={(v) => onChange({ [k.id]: v })} />
+          </div>
         ))}
-        {Object.entries(STYLES).map(([key, st]) => (
-          <div key={key}>
-            <div className="text-sm font-medium">{st.label}</div>
-            <div className="mt-1 grid grid-cols-3 gap-1 rounded-xl bg-fg/[.05] p-1" role="radiogroup" aria-label={st.label}>
+      </div>
+
+      <div className={`mt-4 grid grid-cols-2 gap-2 ${ready ? "" : "pointer-events-none opacity-40"}`}>
+        {STYLES.map((st) => (
+          <div key={st.id}>
+            <div className="mb-1 text-[11px] text-mist">{st.label} type</div>
+            <div className="grid grid-cols-3 gap-0.5 rounded-lg bg-fg/[.06] p-0.5" role="radiogroup" aria-label={`${st.label} type`}>
               {st.options.map(([v, l]) => (
-                <button key={v} role="radio" aria-checked={local[key] === v} onClick={() => send({ [key]: v }, true)}
-                  className={`rounded-lg py-1.5 text-sm font-semibold transition active:scale-95 ${local[key] === v ? "bg-ember text-white" : "text-mist hover:text-fg"}`}>
+                <button key={v} role="radio" aria-checked={settings[st.id] === v} onClick={() => onChange({ [st.id]: v })}
+                  className={`rounded-md py-1.5 text-xs font-semibold transition active:scale-95 ${settings[st.id] === v ? "bg-ember text-white" : "text-mist hover:text-fg"}`}>
                   {l}
                 </button>
               ))}
@@ -61,8 +54,8 @@ export default function MixPanel({ settings, busy, error, onChange, onReset }) {
           </div>
         ))}
       </div>
-      <div className="mt-3 flex items-center justify-between">
-        <span className="text-xs text-ember">{error}</span>
+
+      <div className="mt-3 text-right">
         <button onClick={onReset} className="rounded-lg px-2 py-1 text-xs text-mist transition hover:bg-fg/10 hover:text-fg">Back to our mix</button>
       </div>
     </div>

@@ -103,13 +103,23 @@ def test_settings_are_validated():
     assert "evil" not in s and fixer.settings() == fixer.DEFAULTS
 
 
-def test_mix_zero_leaves_the_voice_alone():
+def test_mix_zero_is_your_cleaned_voice():
     rng = np.random.default_rng(2)
-    prep = (rng.normal(0, 0.05, SR * 3) * np.sin(np.linspace(0, 9, SR * 3)) ** 2).astype(np.float32)
-    s = fixer.settings({"mix": 0.0})
-    assert np.allclose(fixer.polish(prep, s), prep)
-    st = fixer.space(prep, s)
-    assert np.allclose(st[0], prep) and np.allclose(st[1], prep)        # no reverb, delay or double
+    s0 = (rng.normal(0, 0.05, SR * 3) * np.sin(np.linspace(0, 9, SR * 3)) ** 2).astype(np.float32)
+    s1 = s0 * 0.5 + 0.01
+    duck = fixer.duck_curve(s1)
+    st = fixer.mixdown(s0, s1, duck, fixer.settings({"mix": 0.0}))
+    assert np.allclose(st[0], s0, atol=1e-6) and np.allclose(st[1], s0, atol=1e-6)   # no polish, reverb, echo, double
+    half = fixer.mixdown(s0, s1, duck, fixer.settings({"mix": 0.5, "reverb": 0, "delay": 0, "width": 0}))
+    assert np.allclose(half[0], 0.5 * s0 + 0.5 * s1, atol=1e-6)                       # Mix = plain dry/wet
+
+
+def test_duck_curve_round_trips():
+    t = np.arange(SR * 4) / SR
+    v = (0.3 * np.sin(2 * np.pi * 1000 * t) * (t < 2)).astype(np.float32)
+    c = fixer.duck_curve(v)
+    assert len(c) == int(np.ceil(len(v) / (SR // fixer.FX["duck_rate"])))
+    assert np.abs(fixer._duck_at(c, len(v)) - fixer._duck(v)).max() < 0.05     # what the browser plays ~ server
 
 
 def test_effects_duck_under_the_voice():
