@@ -164,7 +164,8 @@ export default function Report({ take }) {
   const steps = take.steps ?? take.plan ?? [];
   const stepFor = (type) => steps.find((s) => s.fixes.includes(type));
   const m = (done && take.analysis_after) || a;   // meters show the result once it's fixed
-  const lufs = m.loudness?.integrated_lufs, tp = m.loudness?.true_peak_dbtp, crest = m.dynamics?.crest_factor_db;
+  // loudness range (LRA), not crest factor: crest rises once the gaps are silenced, LRA tracks how far apart words are
+  const lufs = m.loudness?.integrated_lufs, tp = m.loudness?.true_peak_dbtp, lra = m.loudness?.loudness_range_lu;
   return (
     <section className="rise faceplate mt-8 rounded-3xl p-5 sm:p-6" id="report">
       <div className="grid gap-6 lg:grid-cols-[auto_1fr] lg:items-center">
@@ -187,11 +188,13 @@ export default function Report({ take }) {
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
         {lufs != null && <Meter label="Loudness" value={`${lufs.toFixed(1)} LUFS`} pos={(lufs + 40) / 34}
-          verdict={lufs < -20 ? "Quiet. We'll bring it up to streaming level (-16)." : lufs > -12 ? "Very loud. We'll set it to a clean -16." : "Close to streaming level."} />}
+          verdict={done ? (Math.abs(lufs + 12) < 1.5 ? "Loud and punchy, like a released track." : "Set for streaming.")
+            : lufs < -16 ? "Quiet. We'll make it loud and punchy (-12)." : "Loud, but uncontrolled. We'll make it loud and clean (-12)."} />}
         {tp != null && <Meter label="Peak headroom" value={`${tp.toFixed(1)} dB`} pos={(tp + 30) / 31}
           verdict={tp > -1 ? "Peaks hit the ceiling and may crackle." : "Peaks are safely below the ceiling."} />}
-        {crest != null && <Meter label="Volume swings" value={`${crest.toFixed(0)} dB`} pos={crest / 24}
-          verdict={crest > 14 ? "Loud and quiet words are far apart. We'll even them out." : crest < 8 ? "Quite flat already." : "Nicely controlled."} />}
+        {lra != null && <Meter label="Volume swings" value={`${lra.toFixed(1)} LU`} pos={lra / 20}
+          verdict={lra > 10 ? (done ? "Still a wide range between words." : "Loud and quiet words are far apart. We'll even them out.")
+            : lra < 3 ? "Very even, almost flat." : done ? "Even and controlled, words sit up front." : "Nicely controlled already."} />}
       </div>
       {m.spectral?.octave_band_energy_db && <div className="mt-3"><Tone key={done ? "after" : "before"} bands={m.spectral.octave_band_energy_db} /></div>}
     </section>

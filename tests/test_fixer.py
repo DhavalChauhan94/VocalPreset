@@ -1,10 +1,15 @@
 import json
 import os
 
+import numpy as np
+import pyworld as pw
+
 import fixer
+import tune
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SAMPLE = json.load(open(os.path.join(HERE, "..", "docs", "phantom-sample.json")))   # real report, clipped file
+SR = fixer.SR
 
 
 def ids(steps):
@@ -13,41 +18,77 @@ def ids(steps):
 
 def test_plan_from_real_report():
     steps = fixer.plan(SAMPLE)
-    assert ids(steps)[0] == "clean" and ids(steps)[-2:] == ["polish", "master"]
-    assert "note" in ids(steps)            # clipping is flagged honestly, not "fixed"
-    assert "hum" in ids(steps)             # the sample report contains hum
+    assert ids(steps)[0] == "clean" and ids(steps)[-2:] == ["space", "master"]
+    assert "note" in ids(steps) and "hum" in ids(steps)   # clipping flagged honestly; hum gets notches
     for s in steps:
-        assert s["label"] and s["why"]     # every step explains itself to the user
+        assert s["label"] and s["why"]                     # every step explains itself
 
 
-def test_plan_without_report_is_generic():
-    assert ids(fixer.plan(None)) == ["clean", "tone", "dynamics", "polish", "master"]
+def test_plan_without_report_is_full_chain():
+    assert ids(fixer.plan(None)) == ["clean", "eq", "bright", "dynamics", "sibilance", "tone", "gate", "space", "master"]
 
 
-def test_autotune_levels():
-    for level, p in fixer.AUTOTUNE.items():
-        st = next(s for s in fixer.plan(None, level, "A minor") if s["id"] == "autotune")
-        assert st["params"]["key"] == "A minor" and st["params"]["amount"] == p["amount"]
+def test_autotune_step_and_levels():
+    st = next(s for s in fixer.plan(None, "heavy", "A minor") if s["id"] == "autotune")
+    assert st["params"] == {"level": "heavy", "key": "A minor"}
     assert "autotune" not in ids(fixer.plan(None, "off"))
-    # stronger level = more correction, faster snap
-    assert fixer.AUTOTUNE["light"]["amount"] < fixer.AUTOTUNE["heavy"]["amount"]
-    assert fixer.AUTOTUNE["light"]["speed"] > fixer.AUTOTUNE["heavy"]["speed"]
+    L = tune.LEVELS   # stronger = more correction, faster snap
+    assert L["light"]["amount"] < L["heavy"]["amount"] and L["light"]["retune_ms"] > L["heavy"]["retune_ms"] == 0
 
 
-def test_eq_cuts_are_safe():
-    rep = {"problems": {"problems": [{"type": "resonant_peak", "severity": "significant", "details": {
-        "resonances": [{"frequency_hz": f, "prominence_db": 60, "q_factor": 80} for f in (100, 500, 900, 1500, 2500, 4000)]}}]}}
-    cuts = next(s for s in fixer.plan(rep) if s["id"] == "eq")["params"]["cuts"]
-    assert len(cuts) == 4                                   # at most 4 resonances
-    assert all(f > 150 and -6 <= g < 0 and q <= 12 for f, g, q in cuts)
+def test_target_f0_snaps_with_hysteresis():
+    pcs = tune.scale_pcs("A major")
+    f0 = np.array([446.0] * 5 + [0.0] + [452.0] * 5)        # ~24 c then ~46 c sharp of A4
+    out = tune.target_f0(f0, pcs, amount=1.0, retune_ms=0)
+    assert np.allclose(out[f0 > 0], 440.0, atol=0.5) and out[5] == 0
+
+
+def test_autotune_pulls_a_sharp_note_onto_pitch():
+    t = np.arange(int(SR * 1.5)) / SR
+    x = (0.3 * sum(np.sin(2 * np.pi * 446 * k * t) / k for k in range(1, 6))).astype(np.float32)
+    y = tune.autotune(x[None], "heavy", "A major")[0]
+    f0, _ = pw.harvest(y.astype(np.float64), SR, f0_floor=100, f0_ceil=800, frame_period=5)
+    mid = f0[len(f0) // 4: -len(f0) // 4]
+    assert abs(1200 * np.log2(np.median(mid[mid > 0]) / 440)) < 5    # within 5 cents of A4
+
+
+def test_master_is_loud_and_true_peak_safe():
+    rng = np.random.default_rng(0)
+    x = (rng.normal(0, 0.1, (2, SR * 4)) * np.sin(np.linspace(0, 20, SR * 4)) ** 2).astype(np.float32)
+    y = fixer.master(x)
+    assert abs(fixer.engine.lufs(y) - fixer.TARGET_LUFS) < 0.5
+    assert 20 * np.log10(fixer._tp_envelope(y).max()) <= fixer.CEILING_DBTP + 0.15
+
+
+def test_match_tone_converges_on_target():
+    rng = np.random.default_rng(1)
+    x = rng.normal(0, 0.05, SR * 6).astype(np.float32)          # flat (white) start, far from target
+    y = fixer.match_tone(x)
+    assert np.abs(np.array(fixer.TARGET) - fixer.band_spectrum(y)).max() < 2.0
 
 
 def test_score_bounds_and_fixed():
-    assert 0 <= fixer.score(SAMPLE) < 60                    # clipped + hum + loud -> poor
-    clean = {"problems": {"problems": []}, "loudness": {"integrated_lufs": -16.0}}
+    assert 0 <= fixer.score(SAMPLE) < 60                          # clipped + hum + loud -> poor
+    clean = {"problems": {"problems": []}, "loudness": {"integrated_lufs": -12.0, "true_peak_dbtp": -1.2}}
     assert fixer.score(clean) == 100
     assert fixer.score(None) is None
     assert "hum" in fixer.fixed(SAMPLE, clean)
-    # clipping is baked in: never reported as fixed, and its penalty stays after the fix
-    assert "clipping" not in fixer.fixed(SAMPLE, clean)
-    assert fixer.score(clean, before=SAMPLE) == 70
+    assert "clipping" not in fixer.fixed(SAMPLE, clean)           # baked in: never "fixed"
+    assert fixer.score(clean, before=SAMPLE) == 70                # ...and keeps its penalty
+
+
+def test_safe_inter_sample_peaks_are_not_problems():
+    rep = {"loudness": {"true_peak_dbtp": -2.0},
+           "problems": {"problems": [{"type": "inter_sample_peak", "severity": "moderate"}]}}
+    assert fixer.score(rep) is not None and fixer.visible(rep)["problems"]["problems"] == []
+    rep["loudness"]["true_peak_dbtp"] = 0.3
+    assert len(fixer.visible(rep)["problems"]["problems"]) == 1
+
+
+def test_tuned_note_harmonics_are_not_resonances():
+    # harmonics of A4 (440) and E5 (659.3), both in A major, plus one off-key ring
+    res = [{"frequency_hz": f} for f in (440.0, 880.0, 1320.0, 659.3, 1318.5, 1000.0)]
+    rep = {"loudness": {"true_peak_dbtp": -1.2},
+           "problems": {"problems": [{"type": "resonant_peak", "severity": "significant", "details": {"resonances": res}}]}}
+    assert fixer.visible(rep, tuned_key="A major")["problems"]["problems"] == []
+    assert len(fixer.visible(rep)["problems"]["problems"]) == 1          # untuned: still reported

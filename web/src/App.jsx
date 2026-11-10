@@ -230,7 +230,7 @@ export default function App() {
             Drop a dry vocal. We check it like an engineer would, tell you what's off in plain words, and fix it, with optional auto-tune.
           </p>
           <div className="mt-8 hidden gap-8 lg:flex">
-            {[["20", "checks on every take"], ["24", "keys for auto-tune"], ["-16", "LUFS, streaming-ready"]].map(([n, l]) => (
+            {[["20", "checks on every take"], ["24", "keys for auto-tune"], ["-12", "LUFS, loud and clean"]].map(([n, l]) => (
               <div key={l} className="lift-text"><div className="text-3xl font-bold">{n}</div><div className="text-sm text-fg/70">{l}</div></div>
             ))}
           </div>

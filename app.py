@@ -150,7 +150,7 @@ def _analyse_take(tid):
         _ffmp3(t["input"], os.path.join(OUT, f"{tid}_raw.mp3"), 192)
         t["raw"] = f"/api/file/{tid}_raw.mp3"
         try:
-            rep = analysis.analyze(t["input"])
+            rep = fixer.visible(analysis.analyze(t["input"]))
             t.update(analysis=rep, score=fixer.score(rep),
                      lufs_raw=rep.get("loudness", {}).get("integrated_lufs"))
         except Exception as e:   # the fix still works without a report (generic polish)
@@ -174,14 +174,16 @@ def _fix_take(tid, autotune, key):
         steps = fixer.plan(t.get("analysis"), autotune, key)
         t.update(steps=steps, chain=[s["label"] for s in steps], slot=0)
         wav = os.path.join(OUT, f"{tid}.wav")
-        fixer.fix(t["input"], wav, steps, progress)
+        dry = os.path.join(TAKES, f"{tid}_dry.wav")      # no reverb: Phantom hears reverb tails as noise
+        fixer.fix(t["input"], wav, steps, progress, dry_path=dry)
         t.update(stage="Checking the result", slot=len(steps))
         _ffmp3(wav, wav[:-4] + ".mp3")
         y, _ = engine.sf.read(wav, always_2d=True)
         t.update(lufs_out=round(float(engine.lufs(y.T)), 2), peaks_after=_peaks(wav),
                  wav=f"/api/file/{tid}.wav", mp3=f"/api/file/{tid}.mp3")
         try:
-            after = analysis.analyze(wav)
+            tuned = t.get("key") if autotune != "off" else None   # key auto-tune actually used
+            after = fixer.visible(analysis.analyze(dry), tuned_key=tuned)
             t.update(analysis_after=after, score_after=fixer.score(after, t.get("analysis")),
                      fixed=fixer.fixed(t.get("analysis"), after))
         except Exception as e:

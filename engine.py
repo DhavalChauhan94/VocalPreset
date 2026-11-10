@@ -44,13 +44,14 @@ def lufs(x):
     return pyln.Meter(SR).integrated_loudness(x.T.astype(np.float64))
 
 
-def brickwall(x, ceil_db=-1.0, lookahead_ms=1.5, release_ms=80):
+def brickwall(x, ceil_db=-1.0, lookahead_ms=1.5, release_ms=80, peak=None):
     """True-ceiling lookahead limiter (FL Limiter style), click-free.
     attack: min over +-L then a moving average of L -> every output gain <= the gain each
     sample needs, and the curve is smooth. release: one-pole recovery on a 32x-decimated
     envelope, upsampled linearly. (pedalboard's JUCE Limiter is a maximiser, unusable here.)"""
     c = 10 ** (ceil_db / 20)
-    peak = np.abs(x).max(axis=0)
+    if peak is None:                              # callers may pass a true-peak (oversampled) envelope
+        peak = np.abs(x).max(axis=0)
     need = np.minimum(1.0, c / np.maximum(peak, 1e-9))
     L = max(2, int(SR * lookahead_ms / 1000))
     g_att = uniform_filter1d(minimum_filter1d(need, size=2 * L + 1), size=L + 1)
