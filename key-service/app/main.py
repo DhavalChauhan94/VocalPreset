@@ -21,6 +21,20 @@ SourceType = Literal["full_mix", "instrumental", "vocals"]
 app = FastAPI(title="key-service", version="1.0.0")
 
 
+@app.middleware("http")
+async def cap_request_body(request: Request, call_next):
+    """Refuse oversized uploads from the declared size, before the multipart body is read and spooled."""
+    if request.method == "POST":
+        n = request.headers.get("content-length")
+        if n is None:
+            return JSONResponse(status_code=411, content={"error": {"code": "LENGTH_REQUIRED",
+                                                                    "message": "Content-Length header required."}})
+        if not n.isdigit() or int(n) > max_upload_bytes() + 1024 * 1024:   # +1 MB multipart overhead
+            e = too_large()
+            return JSONResponse(status_code=e.status, content={"error": {"code": e.code, "message": e.message}})
+    return await call_next(request)
+
+
 @app.exception_handler(AudioError)
 async def audio_error_handler(_: Request, exc: AudioError) -> JSONResponse:
     return JSONResponse(status_code=exc.status, content={"error": {"code": exc.code, "message": exc.message}})

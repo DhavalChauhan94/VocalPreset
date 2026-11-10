@@ -16,6 +16,8 @@ import subprocess
 import sys
 import tempfile
 
+import engine
+
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -54,8 +56,7 @@ def analyze(path, timeout=None):
     fd, wav = tempfile.mkstemp(suffix=".wav")
     os.close(fd)
     try:
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", path, "-vn", "-c:a", "pcm_f32le", wav],
-                       check=True)
+        engine.run_ffmpeg([*engine.ffmpeg_input(path), "-vn", "-c:a", "pcm_f32le", wav])
         target = _wsl_path(wav) if _cmd()[0].lower().startswith("wsl") else wav
         try:
             return asyncio.run(asyncio.wait_for(_call(target, timeout), timeout + 15))

@@ -16,8 +16,8 @@ import uuid
 from typing import Literal
 
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -41,6 +41,18 @@ JOBS: dict[str, dict] = {}
 app = FastAPI(title="VocalPreset")
 
 
+@app.middleware("http")
+async def cap_request_body(request: Request, call_next):
+    """Refuse oversized POSTs from their declared size, before the multipart body is read and spooled to disk."""
+    if request.method == "POST":
+        n = request.headers.get("content-length")
+        if n is None:
+            return JSONResponse({"detail": "Content-Length required"}, status_code=411)
+        if not n.isdigit() or int(n) > (MAX_MB + 2) * 1024 * 1024:     # +2 MB: multipart overhead and a beat
+            return JSONResponse({"detail": f"File over {MAX_MB} MB"}, status_code=413)
+    return await call_next(request)
+
+
 def _save_upload(up: UploadFile, folder: str) -> str:
     ext = os.path.splitext(up.filename or "")[1][:8] or ".bin"
     path = os.path.join(folder, uuid.uuid4().hex + ext)
@@ -53,8 +65,7 @@ def _save_upload(up: UploadFile, folder: str) -> str:
 
 
 def _ffmp3(src, dst, kbps=320):
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-vn", "-ac", "2",
-                    "-b:a", f"{kbps}k", dst], check=True)
+    engine.run_ffmpeg([*engine.ffmpeg_input(src), "-vn", "-ac", "2", "-b:a", f"{kbps}k", dst])
 
 
 def _peaks(path, n=600):

@@ -137,15 +137,14 @@ def _service(path, source):
     os.close(fd)
     try:
         # the service only takes wav/mp3/flac/m4a/ogg, so WhatsApp .mpeg/.opus/video become a mono wav
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", path, "-vn", "-ac", "1", "-ar", "44100",
-                        "-c:a", "pcm_s16le", wav], check=True)
+        engine.run_ffmpeg([*engine.ffmpeg_input(path), "-vn", "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", wav])
         return _post_wav(wav, source)
     except urllib.error.HTTPError as e:
         err = json.loads(e.read() or b"{}").get("error", {})
         if err.get("code") == "SILENT_AUDIO":
             raise ValueError(err["message"]) from e
         return None
-    except (urllib.error.URLError, OSError, ValueError, subprocess.CalledProcessError):
+    except (urllib.error.URLError, OSError, ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return None
     finally:
         os.unlink(wav)

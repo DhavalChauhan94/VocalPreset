@@ -74,3 +74,17 @@ def test_undecodable(tmp_path: Path) -> None:
     p.write_bytes(b"\x00" * 4096)
     r = _post(p)
     assert r.status_code == 422 and r.json()["error"]["code"] == "DECODE_FAILED"
+
+
+def test_disguised_playlist_is_refused(tmp_path: Path) -> None:
+    # an HLS playlist renamed to .wav must not make ffmpeg fetch URLs or read other files
+    p = tmp_path / "evil.wav"
+    p.write_text("#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\nhttp://127.0.0.1:9/secret\n#EXT-X-ENDLIST\n")
+    r = _post(p)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "DECODE_FAILED"
+    assert "evil" not in r.json()["error"]["message"] and "/" not in r.json()["error"]["message"]   # no paths echoed
+
+
+def test_missing_content_length_is_refused() -> None:
+    r = client.post("/detect-key", content=b"x", headers={"content-type": "application/octet-stream", "content-length": ""})
+    assert r.status_code in (411, 413)

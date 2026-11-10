@@ -25,12 +25,29 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ---------- io ----------
 
+# Uploads are untrusted. ffmpeg would otherwise guess the format from the content, so a playlist (HLS) or
+# concat list renamed to .wav could make it fetch URLs (SSRF) or read local files. Local files only, real
+# audio/video containers only, and at most MAX_SECONDS decoded (a tiny file can't expand into gigabytes).
+MAX_SECONDS = 900
+FFMPEG_TIMEOUT = 300
+_FORMATS = "wav,w64,mp3,flac,ogg,mov,mp4,m4a,3gp,matroska,webm,aac,amr,aiff,asf,mpeg,mpegts,caf"
+
+
+def ffmpeg_input(path):
+    """Safe ffmpeg input arguments for an untrusted file (use instead of a bare `-i path`)."""
+    return ["-nostdin", "-protocol_whitelist", "file", "-format_whitelist", _FORMATS,
+            "-t", str(MAX_SECONDS), "-i", path]
+
+
+def run_ffmpeg(args):
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *args], check=True, timeout=FFMPEG_TIMEOUT)
+
+
 def load(path):
     """Any format ffmpeg reads (mp3, m4a, WhatsApp .mpeg/.opus, video) -> float32 stereo."""
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as t:
         tmp = t.name
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", path, "-vn", "-ac", "2",
-                    "-ar", str(SR), "-c:a", "pcm_f32le", tmp], check=True)
+    run_ffmpeg([*ffmpeg_input(path), "-vn", "-ac", "2", "-ar", str(SR), "-c:a", "pcm_f32le", tmp])
     x, _ = sf.read(tmp, dtype="float32", always_2d=True)
     os.unlink(tmp)
     return x.T.copy()                                  # (channels, samples)
