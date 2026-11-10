@@ -69,20 +69,20 @@ export const KEYS = [
 ];
 
 /** Key dropdown for the auto-tune. */
-export function KeyPicker({ value, onChange, disabled }) {
-  const cur = KEYS.find((k) => k.id === value) ?? KEYS[0];
+export function KeyPicker({ value, onChange, disabled, keys = KEYS, hint }) {
+  const cur = keys.find((k) => k.id === value) ?? keys[0];
   return (
     <Listbox value={value} onChange={onChange} disabled={disabled}>
       <ListboxButton className="group slot flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition hover:border-fg/25 hover:bg-fg/[.06] active:scale-[.99] focus:outline-none data-[disabled]:opacity-40 data-[focus]:ring-2 data-[focus]:ring-ember/50">
         <span className="grid size-9 place-items-center rounded-xl bg-violet/20 font-mono text-sm text-violet-300">♯</span>
         <div className="flex-1">
           <div className="font-semibold">{cur.label}</div>
-          <div className="text-sm text-mist">{disabled ? "This sound has no auto-tune" : cur.hint ?? "Fixed key"}</div>
+          <div className="text-sm text-mist">{disabled ? "This sound has no auto-tune" : cur.hint ?? hint ?? "Fixed key"}</div>
         </div>
         <Chevron />
       </ListboxButton>
       <ListboxOptions anchor="bottom" transition className={panel}>
-        {KEYS.map((k) => (
+        {keys.map((k) => (
           <ListboxOption key={k.id} value={k.id}
             className="group flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 select-none data-[focus]:bg-fg/[.07]">
             <div className="flex-1">

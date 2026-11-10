@@ -15,6 +15,30 @@
  Offline:  FL Studio .fst ──► fst_reader.py ──► presets/<role>/<sound>.json  (read by engine.load_sound)
 ```
 
+## Current flow: analyse → (auto-tune key) → fix
+The UI no longer offers presets. The preset engine (`engine.process`, `/api/jobs`, `/api/sounds`, the `presets/` folder) stays for the future artist dashboard.
+
+1. **Analyse.** `POST /api/takes` (`vocal`) keeps the upload at `out/jobs/{id}_in.ext`. Phantom then writes `analysis` (its report), `score` (0–100 studio readiness) and `plan` (the fix steps it would run).
+2. **Key (only if auto-tune is on).** `POST /api/takes/{id}/key` → `keys.detect`. It calls the key-service (`KEY_SERVICE_URL`, Essentia 3-profile vote) and falls back to `engine.detect_key` (librosa) if that's down.
+3. **Fix.** `POST /api/takes/{id}/fix` takes `{autotune: off|light|medium|heavy, key}`.
+   - `fixer.plan` turns findings into steps, and `fixer.fix` applies them with pedalboard + librosa + engine helpers.
+   - The output is re-analysed and stored as `analysis_after`, `score_after` and `fixed[]`.
+   - Clipping and lossy files are never counted as fixed: the damage is baked in, so the score keeps their penalty.
+4. **Polling.** `GET /api/jobs/{id}` reports status `analysing` → `analysed` → `fixing` → `done` (or `error`). It uses the same `stage`/`slot` fields the Pipeline UI already reads.
+
+| Finding | Fix step |
+|---|---|
+| always | clean (DC, mono, -18 LUFS, 80 Hz HPF, gate) |
+| hum | scipy notches at the hum frequency plus 2×, 3× and 4× of it |
+| resonant_peak / mud / harshness | PeakFilter cuts (max 4 resonances, cut no deeper than -6 dB) |
+| always | tone (air/low shelves from the octave bands, marked "check"), dynamics (Compressor ratio from crest factor) |
+| sibilance | stronger `engine.deess` |
+| clipping / lossy_codec | an information step only; the UI says it's softened, not removed |
+| auto-tune | `engine.autotune` (pYIN + Rubber Band). Light .6/.6, Medium .85/.3, Heavy 1/0 (amount/speed) |
+| always | polish (small plate reverb) → master (20 Hz HPF, -16 LUFS, -1 dBFS ceiling) |
+
+Unit tests: `PYTHONPATH=. .venv/Scripts/python -m pytest tests/`.
+
 ## Files
 | Path | Role |
 |---|---|
@@ -22,6 +46,8 @@
 | `presets/<role>/*.json` | Decoded presets, one file per "sound", sorted by part: `lead/` (6), `backing/` (3), `adlib/` (3). `fx/` holds decoded effect presets that are not registered |
 | `engine.py` | All DSP: loading, cleanup, each FL plugin's equivalent, auto-tune, mixing, mastering |
 | `app.py` | FastAPI: job API, file downloads, serves the built UI |
+| `fixer.py` | Rules-based fixer: `plan()` (findings → steps with plain-English why), `fix()`, `score()`, `fixed()` |
+| `keys.py` | Key for auto-tune: key-service, with a librosa backup |
 | `analysis.py` | Raw-take report from **Phantom** (FadeLab, AGPL, local). Called over MCP stdio before mixing; on Windows it runs inside WSL. Failure never blocks the mix |
 | `match.py` | Compares our render with an FL Studio export (per-band tone, loudness, peak) |
 | `web/` | React 18 + Vite 6 + Tailwind 4.1 + three.js + Headless UI |

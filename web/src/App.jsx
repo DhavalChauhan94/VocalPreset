@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Orb from "./components/Orb.jsx";
 import DotWaves from "./components/DotWaves.jsx";
-import { KeyPicker, PartPicker, SoundPicker } from "./components/Pickers.jsx";
+import Autotune from "./components/Autotune.jsx";
+import Report from "./components/Report.jsx";
 import { Dropzone, Pipeline, Waveform } from "./components/Parts.jsx";
 
 const STAGE_PALETTES = [
@@ -56,47 +57,76 @@ function ThemeSwitch({ choice, onChange }) {
 
 export default function App() {
   const [theme, themeChoice, setThemeChoice] = useTheme();
-  const [sounds, setSounds] = useState([]);
-  const [sound, setSound] = useState("studio_air");
-  const [part, setPart] = useState("lead");
-  const [key, setKey] = useState("auto");
   const [vocal, setVocal] = useState(null);
-  const [beat, setBeat] = useState(null);
-  const [job, setJob] = useState(null);        // live job state from the server
+  const [job, setJob] = useState(null);        // the take as the server sees it (polled)
   const [err, setErr] = useState("");
+  const [tune, setTune] = useState(false);
+  const [level, setLevel] = useState("medium");
+  const [keyInfo, setKeyInfo] = useState(null);
+  const [keyLoading, setKeyLoading] = useState(false);
+  const [keyError, setKeyError] = useState("");
+  const [chosenKey, setChosenKey] = useState(null);
+  const takeNo = useRef(0);                    // bumps per new take so stale polls stop
 
-  useEffect(() => {
-    fetch("/api/sounds").then((r) => r.json()).then((d) => setSounds(d.sounds)).catch(() => setErr("Server not reachable"));
-  }, []);
-  const cur = sounds.find((s) => s.id === sound);
-  // sounds are sorted by the part they were built for; show only the chosen part's presets
-  const partSounds = sounds.filter((s) => s.role === part);
-  useEffect(() => {
-    if (partSounds.length && !partSounds.some((s) => s.id === sound)) setSound(partSounds[0].id);
-  }, [part, sounds]); // eslint-disable-line react-hooks/exhaustive-deps
+  const poll = async (id, until) => {
+    const me = takeNo.current;
+    for (;;) {
+      await new Promise((res) => setTimeout(res, 400));
+      if (me !== takeNo.current) return null;
+      const j = await (await fetch(`/api/jobs/${id}`)).json();
+      setJob(j);
+      if (j.status === "error") throw new Error(j.error);
+      if (until.includes(j.status)) return j;
+    }
+  };
 
-  // ---------- run a job and poll its progress ----------
-  const start = async () => {
-    setErr(""); stop();
-    const fd = new FormData();
-    fd.append("vocal", vocal); fd.append("part", part); fd.append("sound", sound); fd.append("key", key);
-    if (beat) fd.append("beat", beat);
-    setJob({ status: "running", stage: "Uploading", slot: null, elapsed: 0, chain: cur.chain });
+  // ---------- 1. drop a vocal -> analysis starts straight away ----------
+  const onVocal = async (file) => {
+    stop(); takeNo.current += 1;
+    setVocal(file); setErr(""); setKeyInfo(null); setChosenKey(null); setKeyError("");
+    if (!file) { setJob(null); return; }
+    setJob({ status: "analysing", stage: "Uploading" });
     try {
-      const r = await fetch("/api/jobs", { method: "POST", body: fd });
-      const { id, detail } = await r.json();
-      if (!r.ok) throw new Error(detail || "Upload failed");
-      for (;;) {
-        await new Promise((res) => setTimeout(res, 350));
-        const j = await (await fetch(`/api/jobs/${id}`)).json();
-        setJob({ ...j, chain: cur.chain });
-        if (j.status === "error") throw new Error(j.error);
-        if (j.status === "done") break;
-      }
+      const fd = new FormData();
+      fd.append("vocal", file);
+      const r = await fetch("/api/takes", { method: "POST", body: fd });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Upload failed");
+      await poll(d.id, ["analysed"]);
     } catch (e) { setErr(e.message); setJob(null); }
   };
-  const busy = job?.status === "running";
+
+  // ---------- 2. auto-tune on -> detect the key (once per take) ----------
+  const detectKey = async (id) => {
+    setKeyLoading(true); setKeyError("");
+    try {
+      const r = await fetch(`/api/takes/${id}/key`, { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "Couldn't find the key");
+      setKeyInfo(d); setChosenKey(d.key_string);
+    } catch (e) { setKeyError(e.message); } finally { setKeyLoading(false); }
+  };
+  useEffect(() => {
+    if (tune && job?.id && ["analysed", "done"].includes(job.status) && !keyInfo && !keyLoading && !keyError) detectKey(job.id);
+  }, [tune, job?.id, job?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---------- 3. fix it ----------
+  const fix = async () => {
+    stop(); setErr("");
+    try {
+      const r = await fetch(`/api/takes/${job.id}/fix`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autotune: tune ? level : "off", key: tune ? chosenKey : null }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "Couldn't start the fix");
+      setJob((j) => ({ ...j, status: "fixing", stage: "Planning the fix", slot: 0 }));
+      await poll(job.id, ["done"]);
+    } catch (e) { setErr(e.message); setJob((j) => j && { ...j, status: "analysed" }); }
+  };
+  const busy = job?.status === "analysing" || job?.status === "fixing";
   const done = job?.status === "done";
+  const nProblems = job?.analysis?.problems?.problems?.length ?? 0;
 
   // ---------- A/B audio engine: both files play in sync, we cross-fade gains ----------
   const ctx = useRef(null), an = useRef(null), els = useRef({}), gains = useRef({});
@@ -162,7 +192,7 @@ export default function App() {
   const palette = busy ? stages[(job.slot ?? 0) % stages.length]
     : done && showing === "before" ? ["#a78bfa", "#312e81"] : lightMode ? ["#4a9bff", "#103f9a"] : ["#ff5a36", "#6d28d9"];
 
-  const reset = () => { stop(); setJob(null); };
+  const reset = () => { stop(); takeNo.current += 1; setVocal(null); setJob(null); setErr(""); };
 
   return (
     <>
@@ -177,7 +207,7 @@ export default function App() {
             <span className="font-semibold tracking-tight">VocalPreset</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="glass hidden rounded-full px-2.5 py-1 font-mono text-[10px] text-mist sm:inline">FL chain · rebuilt</span>
+            <span className="glass hidden rounded-full px-2.5 py-1 font-mono text-[10px] text-mist sm:inline">analyse, tune, fix</span>
             <ThemeSwitch choice={themeChoice} onChange={setThemeChoice} />
           </div>
         </header>
@@ -188,58 +218,68 @@ export default function App() {
             Bedroom take.<br />Studio finish.
           </h1>
           <p className="lift-text mt-4 max-w-[36ch] text-[1.02rem] leading-relaxed text-fg/80 lg:mt-6 lg:text-lg">
-            Drop a dry vocal and pick a sound rebuilt from real FL Studio presets. It comes back EQ'd, tuned, spaced out and mastered.
+            Drop a dry vocal. We check it like an engineer would, tell you what's off in plain words, and fix it, with optional auto-tune.
           </p>
           <div className="mt-8 hidden gap-8 lg:flex">
-            {[[String(sounds.length || "–"), "FL presets"],
-              [String(sounds.reduce((n, s) => n + s.chain.length - (s.skipped?.length ?? 0), 0) || "–"), "plugins rebuilt"],
-              ["3–15s", "per song"]].map(([n, l]) => (
+            {[["20", "checks on every take"], ["24", "keys for auto-tune"], ["-16", "LUFS, streaming-ready"]].map(([n, l]) => (
               <div key={l} className="lift-text"><div className="text-3xl font-bold">{n}</div><div className="text-sm text-fg/70">{l}</div></div>
             ))}
           </div>
         </section>
         <div className="faceplate rounded-3xl p-4 sm:p-5 lg:p-6">
 
-        {!job && (
+        {(!job || job.status === "analysing" || job.status === "analysed") && (
           <div className="rise space-y-2.5" style={{ animationDelay: ".08s" }}>
             <div className="flex items-center justify-between px-1 pb-1">
-              <span className="text-lg font-bold tracking-tight" style={{ fontStretch: "110%" }}>New mix</span>
+              <span className="text-lg font-bold tracking-tight" style={{ fontStretch: "110%" }}>Your vocal</span>
               <span className="flex items-center gap-2 text-xs text-mist">
-                {vocal ? "Ready to mix" : "Waiting for a vocal"}<span className="led" data-on={!!vocal} />
+                {!job ? "Waiting for a vocal" : job.status === "analysing" ? "Listening…" : "Ready to fix"}
+                <span className="led" data-on={job?.status === "analysed"} />
               </span>
             </div>
-            <Dropzone label="Drop your vocal here" hint="Dry take: mp3, wav, m4a, WhatsApp voice note or video" file={vocal} onFile={setVocal} />
-            <Label on>Part</Label>
-            <PartPicker value={part} onChange={setPart} />
-            <Label on={!!cur}>Sound <span className="text-mist/70">({partSounds.length} for {part === "adlib" ? "ad-libs" : part === "lead" ? "main vocal" : "backing"})</span></Label>
-            <SoundPicker sounds={partSounds} value={sound} onChange={setSound} />
-            {cur?.autotune && (<><Label on>Auto-tune key</Label><KeyPicker value={key} onChange={setKey} /></>)}
-            <Label on={!!beat}>Beat</Label>
-            <Dropzone compact label="Add a beat" hint="We'll mix and master the full song" file={beat} onFile={setBeat} accent="violet" optional />
-            <button disabled={!vocal || !cur} onClick={start}
+            <Dropzone label="Drop your vocal here" hint="Dry take: mp3, wav, m4a, WhatsApp voice note or video"
+              file={vocal} onFile={onVocal} scanning={job?.status === "analysing"} />
+            {job?.status === "analysing" && (
+              <p className="chip-in px-1 text-sm text-mist">Listening to your take like an engineer would: noise, hum, harsh spots, loudness and more.</p>
+            )}
+            {job?.status === "analysed" && (<>
+              <a href="#report" className="chip-in slot flex items-center justify-between gap-3 rounded-2xl px-4 py-3 transition hover:bg-fg/[.06]">
+                <span className="text-sm">
+                  {job.score != null ? <>Studio readiness <span className="font-bold">{job.score}/100</span></> : "Report ready"}
+                  <span className="text-mist">{nProblems ? `, ${nProblems} thing${nProblems > 1 ? "s" : ""} to fix` : ", nothing major"}</span>
+                </span>
+                <span className="text-sm font-medium text-ember">See report ↓</span>
+              </a>
+              <Autotune on={tune} onToggle={setTune} level={level} onLevel={setLevel} keyInfo={keyInfo}
+                keyLoading={keyLoading} keyError={keyError} chosenKey={chosenKey} onKey={setChosenKey} />
+            </>)}
+            <button disabled={job?.status !== "analysed" || (tune && (keyLoading || !chosenKey))} onClick={fix}
               className="btn-glow btn-sheen mt-3 w-full rounded-2xl bg-gradient-to-b from-[var(--ember-hi)] to-ember py-4 text-lg font-bold tracking-tight text-white transition duration-200 hover:brightness-110 disabled:opacity-40 disabled:shadow-none"
               style={{ fontStretch: "108%" }}>
-              {vocal ? "Mix my vocal" : "Add a vocal to start"}
+              {!job ? "Drop a vocal to start" : job.status === "analysing" ? "Analysing…" : tune && keyLoading ? "Finding the key…" : "Fix my vocal"}
             </button>
             {err && <p className="text-sm text-ember">{err}</p>}
           </div>
         )}
 
-        {job && !done && <Pipeline chain={job.chain} slot={job.slot} stage={job.stage} elapsed={job.elapsed} />}
+        {job?.status === "fixing" && <Pipeline chain={job.chain ?? job.plan?.map((st) => st.label) ?? []} slot={job.slot} stage={job.stage} elapsed={job.elapsed} />}
 
         {done && (
           <div className="glass rise rounded-3xl p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-lg font-semibold">{job.mixed ? "Your song is ready" : "Your vocal is ready"}</div>
-                <div className="text-sm text-mist">{cur?.name} · {part === "adlib" ? "Ad-libs" : part[0].toUpperCase() + part.slice(1)} · {job.seconds}s</div>
+                <div className="text-lg font-semibold">Your vocal is fixed</div>
+                <div className="text-sm text-mist">{job.autotune && job.autotune !== "off" ? `Auto-tune ${job.autotune}` : "No auto-tune"}, done in {job.seconds}s</div>
               </div>
-              <button onClick={reset} className="rounded-xl px-3 py-1.5 text-sm text-mist hover:bg-fg/10 hover:text-fg">New</button>
+              <div className="flex gap-1">
+                <button onClick={() => setJob((j) => ({ ...j, status: "analysed" }))} className="rounded-xl px-3 py-1.5 text-sm text-mist hover:bg-fg/10 hover:text-fg">Tweak</button>
+                <button onClick={reset} className="rounded-xl px-3 py-1.5 text-sm text-mist hover:bg-fg/10 hover:text-fg">New</button>
+              </div>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-1.5">
+              {job.score_after != null && <Chip label="Readiness" value={`${job.score} → ${job.score_after}`} />}
               {job.key && <Chip label="Key" value={job.key} />}
-              {job.bpm && <Chip label="BPM" value={job.bpm} />}
               {job.lufs_raw != null && <Chip label="Loudness" value={`${job.lufs_raw} → ${job.lufs_out} LUFS`} />}
             </div>
 
@@ -286,6 +326,8 @@ export default function App() {
 
         </div>
         </div>
+
+        {job && job.status !== "analysing" && (job.analysis || job.analysis_error) && <Report take={job} />}
 
         {/* always mounted: Web Audio binds to these elements once */}
         <audio ref={(a) => (els.current.after = a)} src={done ? job.mp3 : undefined} preload="auto"

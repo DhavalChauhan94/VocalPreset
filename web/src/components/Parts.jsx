@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 const BARS = Array.from({ length: 34 }, (_, i) => 0.22 + 0.78 * Math.abs(Math.sin(i * 1.7) * Math.sin(i * 0.37 + 0.6)));
 
 /** Drag-and-drop or tap-to-pick file slot. The big one shows an idle waveform that wakes on hover/drag. */
-export function Dropzone({ label, hint, file, onFile, accent = "ember", optional, compact }) {
+export function Dropzone({ label, hint, file, onFile, accent = "ember", optional, compact, scanning }) {
   const [over, setOver] = useState(false);
   const input = useRef(null);
   const tint = accent === "ember" ? "border-ember/60 bg-ember/[.07]" : "border-violet/60 bg-violet/[.08]";
@@ -41,7 +41,7 @@ export function Dropzone({ label, hint, file, onFile, accent = "ember", optional
         )}
       </div>
       {!compact && (
-        <div className="meter mt-3 flex h-9 items-center justify-between" data-on={!!file} data-over={over} aria-hidden="true">
+        <div className="meter mt-3 flex h-9 items-center justify-between" data-on={!!file && !scanning} data-over={over || !!scanning} aria-hidden="true">
           {BARS.map((h, i) => <i key={i} style={{ "--h": h, "--i": i }} />)}
         </div>
       )}

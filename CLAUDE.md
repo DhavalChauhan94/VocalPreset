@@ -28,9 +28,11 @@ cd web && npx vite            # UI hot reload on :5173 (proxies /api → :8080)
 ```
 fst_reader.py   .fst → presets/<sound>.json   (FLhd/FLdt events; per-plugin blob decoders)
 engine.py       load → pre_clean → run_chain (FL plugins) → part tweaks → mix/master
-app.py          /api/sounds · /api/jobs (thread + progress) · /api/file · serves web/dist
+app.py          /api/takes (analyse → key → fix, the current UI) · legacy /api/jobs + /api/sounds · serves web/dist
+fixer.py        Phantom findings → pedalboard/librosa fix steps · score() · fixed()   keys.py  key-service + librosa backup
+analysis.py     Phantom (WSL) full_diagnostic over MCP
 match.py        our render vs FL Studio's render (per-band dB, LUFS, peak)
-web/src/        App.jsx · components/{Orb,DotWaves,Pickers,Parts}.jsx · index.css (theme tokens)
+web/src/        App.jsx · components/{Report,Autotune,Orb,DotWaves,Pickers,Parts}.jsx · index.css (theme tokens)
 presets/        decoded sounds, by part: lead/ backing/ adlib/ (+ fx/, not registered)   samples/  source .fst files
 ```
 
