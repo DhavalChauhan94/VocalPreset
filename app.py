@@ -27,9 +27,14 @@ import fixer
 import keys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "out", "jobs")
+OUT = os.path.join(HERE, "out", "jobs")          # generated mp3/wav, served by /api/file
+TAKES = os.path.join(HERE, "out", "takes")       # raw uploads: never served
+# Only our own render names can be downloaded, never an uploaded file (stops stored HTML/SVG from our origin).
+_SERVABLE = re.compile(r"^[0-9a-f]{12}(_raw)?\.(mp3|wav)$")
+_MEDIA_EXT = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".mpeg", ".mp4", ".mov", ".webm", ".3gp", ".amr", ".wma", ".aiff", ".aif"}
 DIST = os.path.join(HERE, "web", "dist")
 os.makedirs(OUT, exist_ok=True)
+os.makedirs(TAKES, exist_ok=True)
 MAX_MB = 80
 JOBS: dict[str, dict] = {}
 
@@ -151,8 +156,9 @@ def _analyse_take(tid):
         except Exception as e:   # the fix still works without a report (generic polish)
             t["analysis_error"] = str(e)[:300] or type(e).__name__
         t.update(plan=fixer.plan(t.get("analysis")), status="analysed", stage="Analysed")
-    except Exception as e:      # undecodable upload
-        t.update(status="error", error=str(e)[:300])
+    except Exception as e:      # undecodable upload; the raw error holds server paths, so log it, don't send it
+        print(f"take {tid}: {e}")
+        t.update(status="error", error="We couldn't read this file as audio. Try an mp3, wav, m4a or a voice note.")
 
 
 def _fix_take(tid, autotune, key):
@@ -188,9 +194,10 @@ def _fix_take(tid, autotune, key):
 @app.post("/api/takes")
 async def create_take(vocal: UploadFile = File(...)):
     tid = uuid.uuid4().hex[:12]
-    ext = os.path.splitext(vocal.filename or "")[1][:8].lower() or ".bin"
-    path = _save_upload(vocal, OUT)
-    final = os.path.join(OUT, f"{tid}_in{ext}")
+    ext = os.path.splitext(vocal.filename or "")[1].lower()
+    ext = ext if ext in _MEDIA_EXT else ".bin"   # ffmpeg sniffs the content; the name is only a hint
+    path = _save_upload(vocal, TAKES)
+    final = os.path.join(TAKES, f"{tid}_in{ext}")   # shortcut: no TTL cleanup of takes yet; add before going public
     os.replace(path, final)
     JOBS[tid] = {"id": tid, "input": final, "status": "analysing", "stage": "Listening to your take",
                  "slot": None, "t0": time.time()}
@@ -243,8 +250,8 @@ def job(job_id: str):
 
 @app.get("/api/file/{name}")
 def file(name: str):
-    if "/" in name or ".." in name:
-        raise HTTPException(400)
+    if not _SERVABLE.match(name):
+        raise HTTPException(404)
     path = os.path.join(OUT, name)
     if not os.path.exists(path):
         raise HTTPException(404)
