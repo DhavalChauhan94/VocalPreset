@@ -1,0 +1,7 @@
+# Runtime (Python 3.11, Linux/macOS: Essentia has no Windows wheel). Also needs ffmpeg on PATH.
+essentia==2.1b6.dev1389
+numpy==2.4.6
+fastapi==0.162.2
+pydantic==2.14.3
+uvicorn==0.54.0
+python-multipart==0.0.33

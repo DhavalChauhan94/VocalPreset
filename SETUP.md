@@ -14,6 +14,12 @@ ffmpeg reads every input format (mp3, wav, m4a, WhatsApp `.mpeg`/`.opus`, and th
 ./start.sh                 # http://localhost:8080
 PORT=9000 ./start.sh       # pick another port if 8080 is taken
 ```
+**On Windows**, double-click `start.bat` or run it from the project folder. It runs `start.ps1`, which does the same four steps using `.venv\Scripts`:
+```powershell
+.\start.bat                # http://localhost:8080 (this PC only)
+.\start.bat -Port 9000     # another port
+.\start.bat -Lan           # also reachable from a phone on the same Wi-Fi
+```
 `start.sh` does four things:
 1. creates `.venv` and runs `pip install -r requirements.txt`
 2. runs `npm install` in `web/` (first time only)
@@ -45,6 +51,34 @@ Vite forwards `/api/*` to `:8080` (see `web/vite.config.js`). After UI changes, 
 .venv/bin/python engine.py my_vocal.wav adlib out.wav --sound no_fall --beat beat.mp3
 ```
 The repo ships **no vocal audio**, since the test vocal belongs to an artist. Use any dry vocal of your own.
+
+## Raw-take analysis (Phantom, optional)
+Each upload is analysed by [Phantom](https://fadelab.net) before mixing (`analysis.py`). If Phantom is missing, the mix still runs and the job shows `analysis_error`.
+
+Phantom doesn't support Windows, so on Windows it runs in WSL. Do this once:
+1. In an **admin** PowerShell: `wsl --install -d Ubuntu`, then reboot and create the Ubuntu user.
+2. In Ubuntu:
+   ```bash
+   sudo apt update && sudo apt install -y ffmpeg
+   curl -LsSf https://astral.sh/uv/install.sh | sh && source ~/.local/bin/env
+   PHANTOM_NO_TELEMETRY=1 uv tool install phantom-audio --python 3.13   # core only, ~50 MB
+   phantom doctor
+   ```
+3. Back in Windows, check it: `.venv\Scripts\python analysis.py some_vocal.wav` prints the JSON report.
+
+We don't use `curl https://fadelab.net/install | bash`: piped like that, it installs every extra (~2.5 GB of PyTorch), sends install telemetry and adds a Claude Code plugin. On Linux or macOS, skip WSL and set `PHANTOM_CMD=phantom-mcp` (that's already the default off Windows). `PHANTOM_TIMEOUT` (default 60 s) caps how long a job waits for the analysis.
+
+## Key service for auto-tune (optional, in WSL)
+`key-service/` detects a song's key from the **beat** someone adds in the auto-tune card. Without it, the app still works: `keys.py` uses its own vocal-based detector.
+Build and start it once inside Ubuntu (WSL):
+```bash
+sudo apt install -y docker.io && sudo systemctl enable --now docker
+cd /mnt/c/<path-to>/VocalPreset/key-service
+docker build -t key-service:1.0 .
+docker run -d --restart unless-stopped --name keysvc -p 8001:8001 key-service:1.0
+curl localhost:8001/health      # {"status":"ok"}
+```
+`start.bat` keeps a WSL session open while the site runs, so the container stays up. Details and tests: `key-service/README.md`.
 
 ## Troubleshooting
 | Symptom | Fix |
