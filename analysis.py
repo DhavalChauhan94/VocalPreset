@@ -19,7 +19,7 @@ import tempfile
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-_DEFAULT = (["wsl.exe", "-e", "bash", "-lc", "PHANTOM_QUIET=1 exec phantom-mcp"]
+_DEFAULT = (["wsl.exe", "-e", "bash", "-lc", "PHANTOM_QUIET=1 FASTMCP_SHOW_SERVER_BANNER=false FASTMCP_CHECK_FOR_UPDATES=off FASTMCP_LOG_LEVEL=WARNING exec phantom-mcp"]
             if os.name == "nt" else ["phantom-mcp"])
 
 

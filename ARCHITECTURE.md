@@ -39,7 +39,7 @@
 | 213 | Plugin state blob: layout is per plugin, see [PRESETS.md](PRESETS.md) |
 | 225 | Mixer params: 12-byte records `(u32 0, u32 id, i32 value)`. Per slot `n`: `base + (n<<16)` = enabled, `+1` = slot mix (12800 = 100%). `base + 0xC0` = track volume |
 
-**Before the engine:** `app._run` asks Phantom for a `full_diagnostic` of the raw upload (`analysis.analyze`). The upload is first converted to a lossless float WAV, because Phantom can't decode WhatsApp/m4a/video. The report is stored on the job for the next step (a LangChain agent). It doesn't change the mix yet.
+**Before the engine:** `app._run` asks Phantom for a `full_diagnostic` of the raw upload (`analysis.analyze`). The upload is first converted to a lossless float WAV, because Phantom can't decode WhatsApp/m4a/video. The report is stored on the job for the next step (a LangChain agent). It doesn't change the mix yet. Report format (a real example on a clipped file): `docs/phantom-sample.json`. Typical time: ~3 s for a short take, ~11 s for 3 minutes.
 
 ## Audio engine pipeline (`engine.process`)
 1. **load**: ffmpeg → 44.1 kHz float32 stereo. Any format works, including video.

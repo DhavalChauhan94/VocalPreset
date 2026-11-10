@@ -1,0 +1,371 @@
+{
+  "file": "tmprx6w029t.wav",
+  "duration_seconds": 6.0,
+  "sample_rate": 44100,
+  "channels": 1,
+  "spectral": {
+    "spectral_centroid_hz": 2873.2,
+    "spectral_rolloff_hz": 533.9,
+    "spectral_flatness": 0.2107,
+    "spectral_contrast": [
+      -0.0773,
+      -0.2284,
+      -0.3088,
+      -0.4238,
+      -0.6229,
+      -0.8232
+    ],
+    "dissonance": 0.3226,
+    "octave_band_energy_db": {
+      "31_hz": -46.65,
+      "62_hz": -43.16,
+      "125_hz": -37.34,
+      "250_hz": 0.63,
+      "500_hz": -6.97,
+      "1000_hz": -10.39,
+      "2000_hz": -13.83,
+      "4000_hz": -23.04,
+      "8000_hz": -32.73,
+      "16000_hz": -31.94
+    }
+  },
+  "loudness": {
+    "integrated_lufs": -0.69,
+    "true_peak_dbtp": 1.07,
+    "loudness_range_lu": 2.27,
+    "short_term_lufs": {
+      "min": -3.65,
+      "max": -0.56,
+      "mean": -1.29,
+      "count": 61,
+      "p5": -3.21,
+      "p25": -1.9,
+      "p50": -0.61,
+      "p75": -0.59,
+      "p95": -0.56
+    },
+    "momentary_lufs": {
+      "min": -3.72,
+      "max": -0.43,
+      "mean": -0.72,
+      "count": 61,
+      "p5": -1.75,
+      "p25": -0.66,
+      "p50": -0.6,
+      "p75": -0.53,
+      "p95": -0.45
+    }
+  },
+  "dynamics": {
+    "rms_dbfs": -2.97,
+    "peak_dbfs": 0.0,
+    "crest_factor_db": 2.97,
+    "crest_factor_is_low": true,
+    "dynamic_range_db": 1.99,
+    "dynamic_complexity": 0.6259,
+    "loudness_db": -4.55
+  },
+  "stereo": {
+    "correlation": 1.0,
+    "stereo_width": 0.0,
+    "mid_side_ratio_db": null,
+    "mid_side_state": "pure_mid",
+    "balance_db": 0.0,
+    "panorama_pct": {
+      "left": 0.0,
+      "center": 100.0,
+      "right": 0.0
+    }
+  },
+  "phase": {
+    "phase_correlation": 1.0,
+    "per_band_correlation": {
+      "sub": 1.0,
+      "low": 1.0,
+      "low_mid": 1.0,
+      "mid": 1.0,
+      "high": 1.0,
+      "air": 1.0
+    },
+    "polarity_inverted": false
+  },
+  "problems": {
+    "problems": [
+      {
+        "type": "clipping",
+        "severity": "dealbreaker",
+        "message": "Clipping detected: 36051 samples (13.62%) at digital maximum.",
+        "details": {
+          "clipped_samples": 36051,
+          "clipped_percent": 13.6247
+        }
+      },
+      {
+        "type": "inter_sample_peak",
+        "severity": "significant",
+        "message": "Inter-sample peaks detected: true peak is 1.1 dB above sample peak (1.1 dBTP).",
+        "details": {
+          "true_peak_dbtp": 1.07,
+          "sample_peak_dbfs": 0.0,
+          "overshoot_db": 1.07
+        }
+      },
+      {
+        "type": "hum",
+        "severity": "significant",
+        "message": "Possible mains hum near 180.1 Hz (salience: 0.00). Found 1 hum component(s).",
+        "details": {
+          "primary_frequency_hz": 180.1,
+          "primary_salience": 0.005,
+          "num_components": 1,
+          "frequencies_hz": [
+            180.1
+          ]
+        }
+      },
+      {
+        "type": "resonant_peak",
+        "severity": "significant",
+        "message": "Detected 45 resonant peak(s). Strongest at 554 Hz (40.6 dB prominence, Q=21).",
+        "details": {
+          "num_resonances": 45,
+          "resonances": [
+            {
+              "frequency_hz": 554.5,
+              "prominence_db": 40.6,
+              "q_factor": 21.1
+            },
+            {
+              "frequency_hz": 2185.6,
+              "prominence_db": 32.6,
+              "q_factor": 28.2
+            },
+            {
+              "frequency_hz": 1243.5,
+              "prominence_db": 32.4,
+              "q_factor": 35.5
+            },
+            {
+              "frequency_hz": 1728.0,
+              "prominence_db": 31.5,
+              "q_factor": 53.9
+            },
+            {
+              "frequency_hz": 1109.0,
+              "prominence_db": 31.2,
+              "q_factor": 33.5
+            },
+            {
+              "frequency_hz": 1938.0,
+              "prominence_db": 31.1,
+              "q_factor": 55.5
+            },
+            {
+              "frequency_hz": 1539.6,
+              "prominence_db": 30.3,
+              "q_factor": 35.4
+            },
+            {
+              "frequency_hz": 829.0,
+              "prominence_db": 29.0,
+              "q_factor": 36.3
+            },
+            {
+              "frequency_hz": 2777.8,
+              "prominence_db": 28.1,
+              "q_factor": 40.1
+            },
+            {
+              "frequency_hz": 742.9,
+              "prominence_db": 28.0,
+              "q_factor": 34.8
+            },
+            {
+              "frequency_hz": 931.3,
+              "prominence_db": 27.8,
+              "q_factor": 42.0
+            },
+            {
+              "frequency_hz": 624.5,
+              "prominence_db": 27.4,
+              "q_factor": 31.9
+            },
+            {
+              "frequency_hz": 1383.5,
+              "prominence_db": 27.4,
+              "q_factor": 51.7
+            },
+            {
+              "frequency_hz": 2470.9,
+              "prominence_db": 27.4,
+              "q_factor": 39.0
+            },
+            {
+              "frequency_hz": 495.3,
+              "prominence_db": 27.1,
+              "q_factor": 26.9
+            },
+            {
+              "frequency_hz": 3116.9,
+              "prominence_db": 27.0,
+              "q_factor": 30.0
+            },
+            {
+              "frequency_hz": 1318.9,
+              "prominence_db": 26.5,
+              "q_factor": 54.0
+            },
+            {
+              "frequency_hz": 1868.0,
+              "prominence_db": 25.9,
+              "q_factor": 60.7
+            },
+            {
+              "frequency_hz": 441.4,
+              "prominence_db": 25.8,
+              "q_factor": 25.7
+            },
+            {
+              "frequency_hz": 1663.4,
+              "prominence_db": 25.7,
+              "q_factor": 58.9
+            },
+            {
+              "frequency_hz": 1480.4,
+              "prominence_db": 25.6,
+              "q_factor": 57.0
+            },
+            {
+              "frequency_hz": 3429.2,
+              "prominence_db": 25.4,
+              "q_factor": 46.2
+            },
+            {
+              "frequency_hz": 985.1,
+              "prominence_db": 25.1,
+              "q_factor": 44.8
+            },
+            {
+              "frequency_hz": 662.1,
+              "prominence_db": 23.3,
+              "q_factor": 36.9
+            },
+            {
+              "frequency_hz": 877.5,
+              "prominence_db": 22.9,
+              "q_factor": 44.9
+            },
+            {
+              "frequency_hz": 3741.4,
+              "prominence_db": 22.4,
+              "q_factor": 51.9
+            },
+            {
+              "frequency_hz": 312.2,
+              "prominence_db": 22.0,
+              "q_factor": 21.0
+            },
+            {
+              "frequency_hz": 3316.1,
+              "prominence_db": 21.5,
+              "q_factor": 51.1
+            },
+            {
+              "frequency_hz": 2955.4,
+              "prominence_db": 21.4,
+              "q_factor": 77.1
+            },
+            {
+              "frequency_hz": 4032.1,
+              "prominence_db": 21.4,
+              "q_factor": 85.6
+            },
+            {
+              "frequency_hz": 3870.6,
+              "prominence_db": 21.1,
+              "q_factor": 82.0
+            },
+            {
+              "frequency_hz": 4344.3,
+              "prominence_db": 21.0,
+              "q_factor": 87.3
+            },
+            {
+              "frequency_hz": 3596.0,
+              "prominence_db": 20.9,
+              "q_factor": 81.0
+            },
+            {
+              "frequency_hz": 3219.2,
+              "prominence_db": 20.8,
+              "q_factor": 80.1
+            },
+            {
+              "frequency_hz": 2637.8,
+              "prominence_db": 20.7,
+              "q_factor": 77.1
+            },
+            {
+              "frequency_hz": 220.7,
+              "prominence_db": 20.5,
+              "q_factor": 15.7
+            },
+            {
+              "frequency_hz": 274.5,
+              "prominence_db": 20.1,
+              "q_factor": 18.5
+            },
+            {
+              "frequency_hz": 2713.2,
+              "prominence_db": 18.3,
+              "q_factor": 81.8
+            },
+            {
+              "frequency_hz": 4166.7,
+              "prominence_db": 18.2,
+              "q_factor": 49.5
+            },
+            {
+              "frequency_hz": 2417.1,
+              "prominence_db": 18.0,
+              "q_factor": 80.8
+            },
+            {
+              "frequency_hz": 4678.1,
+              "prominence_db": 18.0,
+              "q_factor": 50.4
+            },
+            {
+              "frequency_hz": 2863.9,
+              "prominence_db": 17.6,
+              "q_factor": 83.7
+            },
+            {
+              "frequency_hz": 4974.2,
+              "prominence_db": 15.5,
+              "q_factor": 72.1
+            },
+            {
+              "frequency_hz": 3962.1,
+              "prominence_db": 14.9,
+              "q_factor": 82.7
+            },
+            {
+              "frequency_hz": 3526.1,
+              "prominence_db": 12.4,
+              "q_factor": 95.9
+            }
+          ]
+        }
+      }
+    ],
+    "clean": false,
+    "summary": {
+      "dealbreaker": 1,
+      "significant": 3,
+      "moderate": 0,
+      "minor": 0,
+      "total": 4
+    }
+  }
+}
