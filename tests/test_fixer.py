@@ -19,7 +19,8 @@ def ids(steps):
 def test_plan_from_real_report():
     steps = fixer.plan(SAMPLE)
     assert ids(steps)[0] == "clean" and ids(steps)[-2:] == ["space", "master"]
-    assert "note" in ids(steps) and "hum" in ids(steps)   # clipping flagged honestly; hum gets notches
+    assert "note" in ids(steps)                            # clipping flagged honestly
+    assert "hum" not in ids(steps)                         # its "hum" has salience 0.005: a clipping side effect
     for s in steps:
         assert s["label"] and s["why"]                     # every step explains itself
 
@@ -72,7 +73,9 @@ def test_score_bounds_and_fixed():
     clean = {"problems": {"problems": []}, "loudness": {"integrated_lufs": -12.0, "true_peak_dbtp": -1.2}}
     assert fixer.score(clean) == 100
     assert fixer.score(None) is None
-    assert "hum" in fixer.fixed(SAMPLE, clean)
+    real_hum = {"loudness": {"integrated_lufs": -20.0}, "problems": {"problems": [
+        {"type": "hum", "severity": "significant", "details": {"primary_frequency_hz": 50.0, "primary_salience": 0.995}}]}}
+    assert "hum" in ids(fixer.plan(real_hum)) and "hum" in fixer.fixed(real_hum, clean)
     assert "clipping" not in fixer.fixed(SAMPLE, clean)           # baked in: never "fixed"
     assert fixer.score(clean, before=SAMPLE) == 70                # ...and keeps its penalty
 
@@ -92,3 +95,26 @@ def test_tuned_note_harmonics_are_not_resonances():
            "problems": {"problems": [{"type": "resonant_peak", "severity": "significant", "details": {"resonances": res}}]}}
     assert fixer.visible(rep, tuned_key="A major")["problems"]["problems"] == []
     assert len(fixer.visible(rep)["problems"]["problems"]) == 1          # untuned: still reported
+
+
+def test_settings_are_validated():
+    s = fixer.settings({"mix": 7, "warmth": -9, "reverb_style": "<script>", "delay_style": "quarter", "evil": 1})
+    assert s["mix"] == 1.0 and s["warmth"] == -1.0 and s["reverb_style"] == "plate" and s["delay_style"] == "quarter"
+    assert "evil" not in s and fixer.settings() == fixer.DEFAULTS
+
+
+def test_mix_zero_leaves_the_voice_alone():
+    rng = np.random.default_rng(2)
+    prep = (rng.normal(0, 0.05, SR * 3) * np.sin(np.linspace(0, 9, SR * 3)) ** 2).astype(np.float32)
+    s = fixer.settings({"mix": 0.0})
+    assert np.allclose(fixer.polish(prep, s), prep)
+    st = fixer.space(prep, s)
+    assert np.allclose(st[0], prep) and np.allclose(st[1], prep)        # no reverb, delay or double
+
+
+def test_effects_duck_under_the_voice():
+    t = np.arange(SR * 4) / SR
+    voice = (0.3 * np.sin(2 * np.pi * 1000 * t) * (t < 2)).astype(np.float32)   # 2 s of voice, then silence
+    g = fixer._duck(voice)
+    assert g[int(SR * 1.5)] < 0.5                    # reverb/echo turned down ~6+ dB while the voice plays
+    assert g[int(SR * 3.0)] > 0.95                   # and fully back once it stops, so tails bloom

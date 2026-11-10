@@ -26,41 +26,39 @@ The UI no longer offers presets. The preset engine (`engine.process`, `/api/jobs
    - Clipping and lossy files are never counted as fixed: the damage is baked in, so the score keeps their penalty.
 4. **Polling.** `GET /api/jobs/{id}` reports status `analysing` → `analysed` → `fixing` → `done` (or `error`). It uses the same `stage`/`slot` fields the Pipeline UI already reads.
 
-**Studio chain (`fixer.py`).** It's driven by measurement: Phantom findings, plus the take's own long-term spectrum compared against `TARGET`. The steps run in this order:
+**Studio chain (`fixer.py`), v2.** v1 measured right but sounded over-bright and thin ("laptop mix"). The chain is split into three stages so the Mix panel can re-render fast:
 
-| Step | What it does |
-|---|---|
-| clean | 85 Hz HPF + stationary spectral denoise (20 dB when Phantom flags noise/SNR, else 10) → -18 LUFS working level |
-| hum | scipy notches at the hum frequency and its 2×/3×/4× |
-| eq | measures narrow resonances (1/3-oct prominence ≥ 5 dB, 150 Hz–8 kHz) and cuts up to 5 of them. Runs **before** auto-tune, because tuned harmonics look like resonances |
-| autotune | `tune.py`: WORLD vocoder, used only below 5 kHz and only on voiced audio; the original air and consonants are kept |
-| bright | EQ pass toward TARGET + harmonic exciter (new >5 kHz harmonics from the 2.5 kHz+ band) |
-| dynamics | 4:1 (10 ms attack) → 3:1 (15 ms) → look-ahead peak limiter. Faster attacks clicked on tuned pulses |
-| sibilance | split-band de-esser: cuts 5.5–11 kHz only when it is unusually loud relative to the voice |
-| tone | iterative EQ to TARGET (within 1 dB, max 4 passes). It runs last because compressors reshape the balance |
-| gate | 1:4 downward expander for the gaps (compression lifts the noise there) |
-| space | plate reverb (30 ms pre-delay) + 1/8 echo on a 400 Hz–9 kHz send |
-| master | true-peak limiter (4× oversampled envelope into `engine.brickwall`) → -12 LUFS, ≤ -1.2 dBTP |
+| Stage | Step | What it does |
+|---|---|---|
+| PREP (full strength; cached as `out/takes/{id}_prep.npy`) | clean | 24 dB/oct 75 Hz HPF + stationary spectral denoise → -18 LUFS |
+| | hum | scipy notches at the hum frequency and its 2×/3×/4× (only when Phantom's salience ≥ 0.1) |
+| | eq | measured resonance cuts (before auto-tune: tuned harmonics look like resonances) |
+| | autotune | `tune.py` (WORLD below 5 kHz, voiced frames only) |
+| POLISH (every move scaled by **Mix**) | bright | EQ toward the target + gentle even-harmonic exciter (0.12, >7 kHz) |
+| | dynamics | 4:1 (10 ms) → 3:1 (15 ms) + 35% parallel "New York" compression + look-ahead peak control |
+| | sibilance | dynamic cuts for 2.5–5 kHz (harshness) and 5.5–11 kHz (S/T), only when they stab out |
+| | tone | tape-style asymmetric saturation (warmth) → iterative EQ to the target → rumble HPF again |
+| | gate | gap expander (floor -32 dB) |
+| SPACE | doubler | 14/21 ms modulated copies, panned L/R |
+| | reverb | **convolution** with a synthetic stereo IR (per-band decay; Room/Plate/Hall) |
+| | delay | ping-pong delay |
+| | master | -12 LUFS, ≤ -1.2 dBTP (4×-oversampled peaks into `engine.brickwall`) |
 
-- **`TARGET`** (dB vs 1 kHz, loud frames) is `[-8, -5, -2, 0, -2, -5, -9, -14]` across 113 Hz–12.8 kHz. Marked **check**: confirm it against real studio vocals with `match.py`.
-- **After-analysis** runs on the vocal mastered **without** reverb, because Phantom reads reverb tails as noise.
-- **Filtered from scores and the UI** (`fixer.visible`):
-  - inter-sample peaks when the true peak is ≤ -1 dBTP;
-  - "resonances" that are ≥ 70% harmonics of the auto-tune key's notes.
+- **Ducking:** reverb and delay both duck about 6 dB while the voice plays and bloom in the gaps.
+- **TARGET v2** (dB vs 1 kHz, loud frames, marked **check**): `[-4, -5.5, -5, 0, -4, -9, -14, -19]` across 113 Hz–12.8 kHz. That's warm body and a top end 4–5 dB below v1.
+- **Brightness/Warmth** tilt the target by up to ±6 / ±3 dB. `target_curve()` holds the tilt shapes.
 
-**Measured on a real 83 s laptop-mic take (Recording 154):**
-- Phantom score 68 → 86 (no auto-tune) / 98 (light)
-- 7 kHz band -28.7 → -8.3 dB vs 1 kHz
-- gaps -48 → -76 dBFS
-- clicks (>6 kHz burst detector) +29 without auto-tune, +48 with heavy
-- heavy auto-tune puts 91% of voiced frames within 15 cents (raw 19%)
-- processing about 7 s without auto-tune, about 38 s with it (WORLD analysis is most of it)
+**Mix panel:** `POST /api/takes/{id}/mix` takes any of `mix reverb reverb_style delay delay_style width brightness warmth` (or `reset`).
+- `fixer.settings()` clamps and validates the values.
+- A thread runs `fixer.render(prep, s)` (polish + space + master) and writes `{id}_v{n}.mp3/wav`. The newest version wins and older version files are deleted.
+- The UI keeps playing from the same position when the new render loads.
+- Mix 0% = the cleaned/tuned voice only, with no polish and no effects. It scales processing rather than blending raw with processed, which would comb-filter and, with auto-tune, sound out of tune.
 
-**Auto-tune options tried on that take:**
-- `engine.autotune` (Rubber Band per note chunk): 19 c median off-note, warbly.
-- Praat PSOLA: tuned well but added about 350 clicks.
-- WORLD full-band: added clicks/buzz at low pitch.
-- WORLD below 5 kHz + original above (`tune.py`): about 1 c median off-note, with clicks at the raw take's level.
+**Measured on Recording 154 with v2:**
+- Phantom score 68 → 98 (off/light), 92 (heavy), 82 (medium; mud and SNR sit right at Phantom's limits)
+- 2–5 kHz harsh spikes 6.4 → 3.5–4.1 dB (v1: 4.0)
+- new clicks +15 (off) to +49
+- full fix about 8 s (off) / about 35 s (auto-tune); a Mix-panel re-render takes about 9 s on 83 s, including the MP3 encode
 
 Unit tests: `PYTHONPATH=. .venv/Scripts/python -m pytest tests/`.
 

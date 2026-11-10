@@ -30,7 +30,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "out", "jobs")          # generated mp3/wav, served by /api/file
 TAKES = os.path.join(HERE, "out", "takes")       # raw uploads: never served
 # Only our own render names can be downloaded, never an uploaded file (stops stored HTML/SVG from our origin).
-_SERVABLE = re.compile(r"^[0-9a-f]{12}(_raw)?\.(mp3|wav)$")
+_SERVABLE = re.compile(r"^[0-9a-f]{12}(_raw|_v\d{1,4})?\.(mp3|wav)$")
 _MEDIA_EXT = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".mpeg", ".mp4", ".mov", ".webm", ".3gp", ".amr", ".wma", ".aiff", ".aif"}
 DIST = os.path.join(HERE, "web", "dist")
 os.makedirs(OUT, exist_ok=True)
@@ -175,12 +175,13 @@ def _fix_take(tid, autotune, key):
         t.update(steps=steps, chain=[s["label"] for s in steps], slot=0)
         wav = os.path.join(OUT, f"{tid}.wav")
         dry = os.path.join(TAKES, f"{tid}_dry.wav")      # no reverb: Phantom hears reverb tails as noise
-        fixer.fix(t["input"], wav, steps, progress, dry_path=dry)
+        t.update(settings=fixer.settings(), mix_version=0)  # each "Fix" starts from the one-click mix
+        fixer.fix(t["input"], wav, steps, progress, dry_path=dry, prep_path=os.path.join(TAKES, f"{tid}_prep.npy"))
         t.update(stage="Checking the result", slot=len(steps))
         _ffmp3(wav, wav[:-4] + ".mp3")
         y, _ = engine.sf.read(wav, always_2d=True)
         t.update(lufs_out=round(float(engine.lufs(y.T)), 2), peaks_after=_peaks(wav),
-                 wav=f"/api/file/{tid}.wav", mp3=f"/api/file/{tid}.mp3")
+                 wav=f"/api/file/{tid}.wav?t={int(time.time())}", mp3=f"/api/file/{tid}.mp3?t={int(time.time())}")   # ?t: re-fix = new URL, no stale cache
         try:
             tuned = t.get("key") if autotune != "off" else None   # key auto-tune actually used
             after = fixer.visible(analysis.analyze(dry), tuned_key=tuned)
@@ -191,6 +192,34 @@ def _fix_take(tid, autotune, key):
         t.update(status="done", stage="Done", seconds=round(time.time() - t["t_fix"], 1))
     except Exception as e:
         t.update(status="error", error=str(e)[:300])
+
+
+def _mix_take(tid, version, s):
+    """Re-render polish + space + master from the cached cleaned/tuned vocal. Newest tweak wins."""
+    t = JOBS[tid]
+    try:
+        prep = np.load(os.path.join(TAKES, f"{tid}_prep.npy"))
+        name = f"{tid}_v{version}"
+        wav = os.path.join(OUT, f"{name}.wav")
+        fixer.render(prep, s, wav)
+        if t.get("mix_version") != version:       # a newer tweak arrived meanwhile: drop this render
+            os.unlink(wav)
+            return
+        _ffmp3(wav, wav[:-4] + ".mp3")
+        y, _ = engine.sf.read(wav, always_2d=True)
+        old = [t.get("wav"), t.get("mp3")]
+        t.update(settings=s, lufs_out=round(float(engine.lufs(y.T)), 2), peaks_after=_peaks(wav),
+                 wav=f"/api/file/{name}.wav", mp3=f"/api/file/{name}.mp3", status="done", stage="Done")
+        for url in old:                           # previous tweak's files (never the original render)
+            if url and "_v" in url:
+                try:
+                    os.unlink(os.path.join(OUT, url.rsplit("/", 1)[1]))
+                except OSError:
+                    pass
+    except Exception as e:
+        if t.get("mix_version") == version:
+            print(f"mix {tid}: {e}")
+            t.update(status="done", stage="Done", mix_error="Couldn't apply that change. Try again.")
 
 
 @app.post("/api/takes")
@@ -237,6 +266,31 @@ def take_fix(tid: str, req: FixRequest):
     t.update(status="fixing", stage="Planning the fix", t_fix=time.time(), autotune=req.autotune)
     threading.Thread(target=_fix_take, args=(tid, req.autotune, req.key), daemon=True).start()
     return {"id": tid}
+
+
+class MixRequest(BaseModel):
+    mix: float | None = None
+    reverb: float | None = None
+    reverb_style: str | None = None
+    delay: float | None = None
+    delay_style: str | None = None
+    width: float | None = None
+    brightness: float | None = None
+    warmth: float | None = None
+    reset: bool = False          # back to the one-click mix
+
+
+@app.post("/api/takes/{tid}/mix")
+def take_mix(tid: str, req: MixRequest):
+    t = _take(tid, "done", "mixing")
+    if not os.path.exists(os.path.join(TAKES, f"{tid}_prep.npy")):
+        raise HTTPException(409, "fix the take first")
+    s = fixer.settings() if req.reset else fixer.settings(
+        {**t.get("settings", {}), **req.model_dump(exclude_none=True, exclude={"reset"})})   # clamps + validates
+    version = t.get("mix_version", 0) + 1
+    t.update(status="mixing", stage="Updating your mix", mix_version=version, mix_error=None)
+    threading.Thread(target=_mix_take, args=(tid, version, s), daemon=True).start()
+    return {"version": version, "settings": s}
 
 
 @app.get("/api/jobs/{job_id}")

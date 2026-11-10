@@ -5,19 +5,19 @@ fix()   applies them. Tone is matched to TARGET by measuring the take, not by fi
 score() 0-100 "studio readiness" from a Phantom report.
 
 Chain order (dynamics before the final tone match, since compressors reshape the balance):
-clean (HPF + spectral denoise) -> hum notches -> resonance cuts -> auto-tune -> rough tone + exciter
--> two compressors + peak control -> split-band de-esser -> final tone match -> gap expander
--> space (plate + 1/8 echo) -> true-peak master.
+PREP (always full, cached per take): clean (HPF + spectral denoise) -> hum notches -> resonance cuts -> auto-tune.
+POLISH (scaled by the Mix amount): rough tone + gentle exciter -> serial + parallel compression + peak control
+-> dynamic harshness/de-ess -> tape saturation + final tone match -> gap expander.
+SPACE: doubler + ducked convolution reverb + ducked ping-pong delay -> true-peak master.
 Tuned on a real 83 s laptop-mic take: score 61 -> 84, 7 kHz -28.7 -> -8.8 dB vs 1 kHz, gaps
 -48 -> -69 dBFS, -12 LUFS at -1.2 dBTP. TARGET is a first reference curve ("check"): confirm it
 against real studio vocals with match.py before treating it as final.
 """
 import numpy as np
 import librosa
-from pedalboard import (Compressor, Delay, Gain, HighpassFilter, HighShelfFilter, LowpassFilter,
-                        PeakFilter, Pedalboard, Reverb)
+from pedalboard import Compressor, Delay, HighpassFilter, HighShelfFilter, LowpassFilter, PeakFilter, Pedalboard
 from scipy.ndimage import uniform_filter, uniform_filter1d
-from scipy.signal import butter, iirnotch, resample_poly, sosfilt, sosfiltfilt, tf2sos
+from scipy.signal import butter, fftconvolve, iirnotch, resample_poly, sosfilt, sosfiltfilt, tf2sos
 
 import engine
 import tune
@@ -26,10 +26,12 @@ SR = engine.SR
 TARGET_LUFS = -12.0
 CEILING_DBTP = -1.2
 AUTOTUNE = tune.LEVELS
-# Long-term spectrum of a bright modern vocal, dB vs the 1 kHz band, loud frames only ("check").
+# Long-term spectrum of a produced lead vocal, dB vs the 1 kHz band, loud frames only ("check").
+# v1 was [-8,-5,-2,0,-2,-5,-9,-14]: measured right but sounded thin and over-bright ("laptop mix"), so v2 keeps
+# the body (113/226 Hz) and sits the top 4-5 dB lower, like released vocals; Brightness/Warmth tilt it per user.
 BANDS = [(80, 160), (160, 320), (320, 640), (640, 1280), (1280, 2560), (2560, 5120), (5120, 10240), (10240, 16000)]
 CENTERS = [113, 226, 453, 905, 1810, 3620, 7240, 12800]
-TARGET = [-8.0, -5.0, -2.0, 0.0, -2.0, -5.0, -9.0, -14.0]
+TARGET = [-4.0, -5.5, -5.0, 0.0, -4.0, -9.0, -14.0, -19.0]
 _PENALTY = {"dealbreaker": 30, "significant": 12, "moderate": 6, "minor": 2}
 # Damage baked into the recording: re-analysis stops flagging it once peaks are limited, but it is still audible.
 UNFIXABLE = {"clipping", "lossy_codec"}
@@ -46,6 +48,8 @@ def _problems(report):
     for p in (rep.get("problems") or {}).get("problems", []):
         if p["type"] == "inter_sample_peak" and tp is not None and tp <= -1.0:
             continue
+        if p["type"] == "hum" and p.get("details", {}).get("primary_salience", 1.0) < 0.1:
+            continue   # Phantom's own confidence says it's noise-level, not mains hum
         out[p["type"]] = p
     return out
 
@@ -80,25 +84,51 @@ def plan(report, autotune="off", key=None):
         s.append(_step("autotune", f"Auto-tune ({autotune})",
                        f"Pulls each note onto the nearest note of {key or 'the detected key'}, smoothly.",
                        (), level=autotune, key=key or "auto"))
-    s.append(_step("bright", "Add brightness and air",
-                   "Brings up clarity and adds real top-end shimmer, the polished sheen of a studio mic."))
-    s.append(_step("dynamics", "Make it loud and steady",
-                   "Two compressors even out loud and quiet words so every line sits up front."))
-    s.append(_step("sibilance", "Soften harsh S sounds",
-                   "Once it's brighter, sharp 'S' and 'T' sounds are turned down only when they stab out.",
-                   ("sibilance",)))
-    s.append(_step("tone", "Balance the tone like a studio vocal",
-                   "Measures your voice and shapes it to a studio vocal's balance: less boom, more presence.",
-                   ("mud", "harshness")))
+    s.append(_step("bright", "Clarity and smooth air",
+                   "Opens up the top of your voice with smooth, silky air instead of harsh fizz."))
+    s.append(_step("dynamics", "Thick, up-front vocal",
+                   "Two compressors plus a parallel 'New York' blend: every word sits forward, full and never squashed."))
+    s.append(_step("sibilance", "Tame harshness and S sounds",
+                   "Harsh upper-mids and sharp 'S'/'T' sounds are turned down only at the moments they stab out.",
+                   ("sibilance", "harshness")))
+    s.append(_step("tone", "Warmth and studio balance",
+                   "Adds tape-style warmth, then shapes your voice to a pro vocal's balance: full body, clear mids, smooth top.",
+                   ("mud",)))
     s.append(_step("gate", "Silence the gaps", "Turns down background noise between phrases.", ("noise_floor", "snr")))
     if "clipping" in pr or "lossy_codec" in pr:
         s.append(_step("note", "Damage we can't fully undo",
                        "Distorted (clipped) or heavily compressed audio has lost detail for good. "
                        "We'll smooth it, but re-recording gives the best result.", ("clipping", "lossy_codec")))
-    s.append(_step("space", "Studio space", "A short plate reverb and a soft echo, so it sounds produced, not dry."))
+    s.append(_step("space", "Studio space",
+                   "A smooth plate reverb and ping-pong echo that duck while you sing and bloom in the gaps, plus a subtle double for width."))
     s.append(_step("master", "Loud and streaming-safe",
                    f"Masters to {TARGET_LUFS:.0f} LUFS with true peaks under {CEILING_DBTP} dB: loud, and never crackles.",
                    ("inter_sample_peak",)))
+    return s
+
+
+# ---------- user settings (the "Shape your mix" panel) ----------
+# mix scales everything (0 = your cleaned, tuned voice only; 1 = full studio chain). The rest are 0..1
+# except brightness/warmth (-1..1, 0 = our balance). Defaults are the one-click result.
+DEFAULTS = {"mix": 1.0, "reverb": 0.35, "reverb_style": "plate", "delay": 0.2, "delay_style": "eighth",
+            "width": 0.45, "brightness": 0.0, "warmth": 0.3}
+REVERB_STYLES = {"room": (0.7, 0.008), "plate": (1.8, 0.025), "hall": (2.9, 0.04)}   # RT60 s, pre-delay s
+DELAY_STYLES = {"slap": 0.11, "eighth": 0.214, "quarter": 0.428}                     # seconds (1/8, 1/4 at ~140 bpm)
+
+
+def settings(raw=None):
+    """Validated settings: unknown keys dropped, numbers clamped, styles checked."""
+    s = dict(DEFAULTS)
+    for k, v in (raw or {}).items():
+        if k not in DEFAULTS or v is None:
+            continue
+        if k == "reverb_style":
+            s[k] = v if v in REVERB_STYLES else s[k]
+        elif k == "delay_style":
+            s[k] = v if v in DELAY_STYLES else s[k]
+        else:
+            lo = -1.0 if k in ("brightness", "warmth") else 0.0
+            s[k] = float(min(1.0, max(lo, float(v))))
     return s
 
 
@@ -106,6 +136,13 @@ def plan(report, autotune="off", key=None):
 
 def _pb(fx, y):
     return Pedalboard(fx)(y[None], SR)[0] if fx else y
+
+
+_RUMBLE = butter(4, 75, "high", fs=SR, output="sos")   # 24 dB/oct: keeps the chest, kills room rumble/mains
+
+
+def derumble(y):
+    return sosfilt(_RUMBLE, y).astype(np.float32)
 
 
 def _loud_frames(y, n):
@@ -120,6 +157,14 @@ def band_spectrum(y):
     f = np.fft.rfftfreq(n, 1 / SR)
     b = np.array([10 * np.log10(P[(f >= lo) & (f < hi)].mean() + 1e-20) for lo, hi in BANDS])
     return b - b[3]
+
+
+def target_curve(brightness=0.0, warmth=0.0):
+    """TARGET tilted by the user's Brightness (top bands, up to +-6 dB) and Warmth (body, up to +-3 dB)."""
+    t = np.array(TARGET)
+    t += brightness * 6.0 * np.array([0, 0, 0, 0, 0.2, 0.45, 0.75, 1.0])
+    t += warmth * 3.0 * np.array([0.8, 1.0, 0.6, 0, 0, 0, -0.2, -0.3])
+    return t
 
 
 def denoise(y, reduce_db):
@@ -154,40 +199,57 @@ def find_resonances(y, max_n=5, min_prom=5.0):
     return out
 
 
-def eq_pass(y, scale=0.8):
-    diff = np.clip(np.array(TARGET) - band_spectrum(y), -8, 10)
-    fx = [PeakFilter(c, float(d) * scale, 0.9) for c, d in zip(CENTERS[:-1], diff[:-1]) if abs(d) > 0.75]
-    if abs(diff[-1]) > 0.75:
+def eq_pass(y, scale=0.8, target=None):
+    t = np.array(TARGET if target is None else target)
+    diff = np.clip(t - band_spectrum(y), -8, 10)
+    fx = [PeakFilter(c, float(d) * scale, 0.9) for c, d in zip(CENTERS[:-1], diff[:-1]) if abs(d * scale) > 0.5]
+    if abs(diff[-1] * scale) > 0.5:
         fx.append(HighShelfFilter(10000, float(diff[-1]) * scale, 0.7))
     return _pb(fx, y)
 
 
-def match_tone(y, tol=1.0, passes=4):
+def match_tone(y, target=None, tol=1.0, passes=6):
+    t = np.array(TARGET if target is None else target)
     for _ in range(passes):
-        if np.abs(np.clip(np.array(TARGET) - band_spectrum(y), -8, 10)).max() < tol:
+        if np.abs(np.clip(t - band_spectrum(y), -8, 10)).max() < tol:
             break
-        y = eq_pass(y, 0.9)
+        y = eq_pass(y, 0.9, t)
     return y
 
 
-def exciter(y, amount=0.3):
-    """Saturate the 2.5 kHz+ band and keep only the new >5 kHz harmonics: real top end a dark mic never caught."""
-    band = sosfilt(butter(2, 2500, "high", fs=SR, output="sos"), y)
-    drive = 2.0 / (np.abs(band).max() + 1e-9)
-    harm = sosfilt(butter(2, 5000, "high", fs=SR, output="sos"), np.tanh(band * drive) / drive)
-    return y + amount * harm
+def exciter(y, amount=0.12):
+    """Gentle even-harmonic air: saturate the 3 kHz+ band asymmetrically, keep only new >7 kHz content.
+    (The old 0.3 / 5 kHz setting measured fine but sounded fizzy.)"""
+    band = sosfilt(butter(2, 3000, "high", fs=SR, output="sos"), y)
+    d = 2.0 / (np.abs(band).max() + 1e-9)
+    harm = (np.tanh(band * d + 0.3) - np.tanh(0.3)) / d            # +0.3 bias -> even harmonics (smooth)
+    return y + amount * sosfilt(butter(2, 7000, "high", fs=SR, output="sos"), harm)
 
 
-def deess(y, over_db=6.0, max_cut=9.0):
-    """Split-band de-esser: cut 5.5-11 kHz only where it is unusually loud relative to the whole voice."""
-    sib = sosfiltfilt(butter(2, [5500, 11000], "band", fs=SR, output="sos"), y)
+def saturate(y, amount):
+    """Tape-style warmth: asymmetric soft clip of the whole voice, blended in. Density, not distortion."""
+    if amount <= 0:
+        return y
+    pk = np.percentile(np.abs(y), 99.9) + 1e-9
+    d = 1.6 / pk
+    sat = (np.tanh(y * d + 0.15) - np.tanh(0.15)) / d
+    sat *= np.sqrt(np.mean(y ** 2) / (np.mean(sat ** 2) + 1e-12))  # level-match before blending
+    return (1 - amount) * y + amount * sat
+
+
+def dyn_band(y, lo, hi, over_db, max_cut):
+    """Split-band dynamic cut: turn lo-hi Hz down only where it is unusually loud relative to the voice
+    (de-esser for 5.5-11 kHz, harshness tamer for 2.5-5 kHz)."""
+    if max_cut <= 0:
+        return y
+    band = sosfiltfilt(butter(2, [lo, hi], "band", fs=SR, output="sos"), y)
     w = int(SR * 0.005)
-    s_db = 10 * np.log10(uniform_filter1d(sib ** 2, w) + 1e-12)
+    b_db = 10 * np.log10(uniform_filter1d(band ** 2, w) + 1e-12)
     a_db = 10 * np.log10(uniform_filter1d(y ** 2, w) + 1e-12)
     loud = a_db > np.percentile(a_db, 40)
-    rel = s_db - a_db
+    rel = b_db - a_db
     cut = np.clip((rel - np.median(rel[loud]) - over_db) * 0.8, 0, max_cut) * loud
-    return y - sib + sib * 10 ** (-uniform_filter1d(cut, int(SR * 0.012)) / 20)
+    return y - band + band * 10 ** (-uniform_filter1d(cut, int(SR * 0.012)) / 20)
 
 
 def peak_control(y, above_db):
@@ -207,14 +269,78 @@ def gap_gate(y, below_db=24.0, slope=3.0, floor_db=-24.0):
     return y * 10 ** (uniform_filter1d(g_db, int(SR * 0.06)) / 20)
 
 
-def space(y):
-    """Plate-style reverb (30 ms pre-delay) + 1/8 echo on a filtered send. Mono in, stereo out."""
+# ---------- space: convolution reverb, ping-pong delay, doubler ----------
+
+_IR_CACHE = {}
+
+
+def reverb_ir(style):
+    """Synthetic stereo IR: decaying, decorrelated noise per band (highs die faster, like a real plate/hall),
+    soft onset, pre-delay. Smooth and dense, unlike a comb-filter (Freeverb) reverb."""
+    if style in _IR_CACHE:
+        return _IR_CACHE[style]
+    rt, pre = REVERB_STYLES[style]
+    n = int(SR * rt * 1.3)
+    t = np.arange(n) / SR
+    rng = np.random.default_rng(7)
+    ir = np.zeros((2, n))
+    for lo, hi, k in ((60, 500, 1.15), (500, 4000, 1.0), (4000, 12000, 0.55)):   # band edges, RT multiplier
+        sos = butter(2, [lo, hi], "band", fs=SR, output="sos")
+        env = 10 ** (-3 * t / (rt * k))                                          # -60 dB at RT
+        ir += sosfilt(sos, rng.normal(size=(2, n)), axis=1) * env
+    ir *= np.minimum(1, t / 0.004)                                               # no click at the onset
+    ir /= np.sqrt((ir ** 2).sum(axis=1, keepdims=True))
+    ir = np.pad(ir, ((0, 0), (int(SR * pre), 0)))
+    _IR_CACHE[style] = ir.astype(np.float32)
+    return _IR_CACHE[style]
+
+
+def _duck(y, depth=0.55):
+    """Gain for effect returns: dips while the voice is loud, blooms in the gaps (keeps the words clear)."""
+    env = uniform_filter1d(np.abs(y), int(SR * 0.01))
+    # one-pole release (250 ms) on a 64x-decimated envelope: fast
+    D = 64
+    e = env[::D]
+    out = np.empty_like(e)
+    cur = 0.0
+    r = 1 - np.exp(-D / (SR * 0.25))
+    for i, v in enumerate(e):
+        cur = v if v > cur else cur + (v - cur) * r
+        out[i] = cur
+    env = np.interp(np.arange(len(y)), np.arange(len(out)) * D, out)
+    norm = np.clip(env / (np.percentile(env, 95) + 1e-9), 0, 1)
+    return 1 - depth * norm
+
+
+def doubler(y, amount):
+    """Two modulated copies (14/21 ms, slow wobble = a few cents of drift) panned L/R: width + richness."""
+    n = np.arange(len(y))
+    out = []
+    for base, depth, rate in ((0.014, 0.0007, 0.31), (0.021, 0.0009, 0.23)):
+        d = (base + depth * np.sin(2 * np.pi * rate * n / SR)) * SR
+        out.append(np.interp(n - d, n, y, left=0.0))
+    st = Pedalboard([HighpassFilter(220), LowpassFilter(10000)])(np.stack(out).astype(np.float32), SR)
+    return st * (amount * 10 ** (-8 / 20))
+
+
+def space(y, s):
+    """Mono dry -> stereo: dry + doubler + ducked convolution reverb + ducked ping-pong delay."""
+    a = s["mix"]
     st = np.stack([y, y])
-    send = Pedalboard([HighpassFilter(400), LowpassFilter(9000)])(st, SR)
-    verb = Pedalboard([Delay(delay_seconds=0.03, feedback=0, mix=1.0),
-                       Reverb(room_size=0.55, damping=0.55, wet_level=1.0, dry_level=0.0, width=1.0)])(send, SR)
-    echo = Pedalboard([Delay(delay_seconds=0.214, feedback=0.22, mix=1.0), LowpassFilter(5000)])(send, SR)
-    return st + 0.14 * verb + 0.07 * echo
+    if s["width"] * a > 0:
+        st = st + doubler(y, s["width"] * a)
+    send = Pedalboard([HighpassFilter(300), LowpassFilter(8500)])(st, SR)
+    duck = _duck(y)
+    if s["reverb"] * a > 0:
+        wet = np.stack([fftconvolve(send[c], reverb_ir(s["reverb_style"])[c])[: len(y)] for c in (0, 1)])
+        st = st + wet * duck * (0.55 * s["reverb"] * a)
+    if s["delay"] * a > 0:
+        t = DELAY_STYLES[s["delay_style"]]
+        echo_r = Pedalboard([Delay(delay_seconds=t, feedback=0, mix=1.0),
+                             Delay(delay_seconds=2 * t, feedback=0.32, mix=1.0), LowpassFilter(4500)])(send[1:2], SR)
+        echo_l = Pedalboard([Delay(delay_seconds=2 * t, feedback=0.32, mix=1.0), LowpassFilter(4500)])(send[0:1], SR)
+        st = st + np.concatenate([echo_l, echo_r]) * duck * (0.5 * s["delay"] * a)
+    return st
 
 
 def _tp_envelope(st):
@@ -236,52 +362,94 @@ def master(st, lufs_target=TARGET_LUFS, ceiling=CEILING_DBTP):
     return y
 
 
-def _apply(y, step):
+# ---------- the chain ----------
+PREP = ("clean", "hum", "eq", "autotune")              # cleanup + tuning: always full strength, cached per take
+POLISH = ("bright", "dynamics", "sibilance", "tone", "gate")
+
+
+def _prep_step(y, step):
     p, sid = step["params"], step["id"]
     if sid == "clean":
-        y = _pb([HighpassFilter(85)], (y - y.mean()).astype(np.float32))
+        y = derumble(y - y.mean())
         return engine.to_lufs(denoise(y, p["denoise_db"])[None], -18.0)[0]
     if sid == "hum":                           # true notches: very deep, ~2 Hz wide
         for f in p["freqs"]:
             sos = tf2sos(*iirnotch(f, 25.0, SR))
             y = sosfilt(sos, sosfilt(sos, y))
         return y
-    if sid == "autotune":
-        return tune.autotune(y[None], p["level"], p["key"])[0]
     if sid == "eq":
         return _pb([PeakFilter(f, g, q) for f, g, q in find_resonances(y)], y)
+    if sid == "autotune":
+        return tune.autotune(y[None], p["level"], p["key"])[0]
+    return y
+
+
+def _polish_step(y, sid, s):
+    """One polish stage at the user's settings. a = mix amount scales every move; 0 leaves the voice alone."""
+    a = s["mix"]
+    if a <= 0:
+        return y
+    tgt = target_curve(s["brightness"], s["warmth"])
     if sid == "bright":
-        return exciter(eq_pass(y))
+        return exciter(eq_pass(y, 0.8 * a, tgt), 0.12 * a)
     if sid == "dynamics":
-        # 10/15 ms attacks: faster ones ripple the gain on every pulse of a tuned low voice (measured clicks)
-        y = _pb([Compressor(threshold_db=-22, ratio=4, attack_ms=10, release_ms=80),
-                 Compressor(threshold_db=-20, ratio=3, attack_ms=15, release_ms=150), Gain(5)], y)
+        dry = _pb([Compressor(threshold_db=-22, ratio=1 + 3 * a, attack_ms=10, release_ms=80),
+                   Compressor(threshold_db=-20, ratio=1 + 2 * a, attack_ms=15, release_ms=150)], y)
+        # parallel ("New York") compression: a squashed copy under the voice = thickness without pumping
+        crush = _pb([Compressor(threshold_db=-34, ratio=10, attack_ms=5, release_ms=120)], y)
+        crush *= np.sqrt(np.mean(dry ** 2) / (np.mean(crush ** 2) + 1e-12))
+        y = dry + 0.35 * a * crush
         return peak_control(y, 8.0)
     if sid == "sibilance":
-        return deess(y)
+        y = dyn_band(y, 2500, 5000, 4.0, 4.0 * a)        # harsh upper-mids, only when they stab
+        return dyn_band(y, 5500, 11000, 6.0, 9.0 * a)    # S / T
     if sid == "tone":
-        return _pb([HighpassFilter(20)], match_tone(y))
+        y = saturate(y, a * (0.18 + 0.17 * s["warmth"]))
+        own = band_spectrum(y)
+        return derumble(match_tone(y, own + a * (tgt - own)))   # again: the 113 Hz body boost lifts rumble too
     if sid == "gate":
-        return gap_gate(y)
-    return y   # "note" is information only; "space" and "master" are handled in fix()
+        return gap_gate(y, floor_db=-32.0 * a)   # deeper than v1: parallel compression lifts the gaps
+    return y
 
 
-def fix(in_path, out_path, steps, progress=engine._noop, dry_path=None):
-    """Write the finished stereo vocal to out_path. dry_path (optional) gets the same vocal mastered
-    without reverb/echo: Phantom reads reverb tails as noise, so the after-analysis uses that one."""
+def polish(prep, s):
+    y = prep
+    for sid in POLISH:
+        y = _polish_step(y, sid, s).astype(np.float32)
+    return y
+
+
+def render(prep, s, out_path, dry_path=None):
+    """Polish + space + master a prepared (cleaned/tuned) vocal at settings s. Fast: no auto-tune."""
+    dry = polish(prep, s)
+    engine.save(master(space(dry, s)).astype(np.float32), out_path)
+    if dry_path:
+        engine.save(master(np.stack([dry, dry])).astype(np.float32), dry_path)
+    return dry
+
+
+def fix(in_path, out_path, steps, progress=engine._noop, dry_path=None, prep_path=None, s=None):
+    """Full fix at settings s (defaults = one-click). prep_path caches the cleaned/tuned vocal (.npy) so
+    later Mix-panel tweaks only re-run polish + space + master. dry_path: same vocal mastered without
+    reverb/echo, for Phantom (it reads reverb tails as noise)."""
+    s = settings(s)
     tune.autotune.last_key = None
     y = engine.load(in_path).mean(axis=0)
-    wet = None
+    dry = None
     for i, step in enumerate(steps):
         progress("plugin", slot=i, plugin=step["label"])
-        if step["id"] == "space":
-            wet = space(y)
-        elif step["id"] != "master":
-            y = _apply(y, step).astype(np.float32)
-    dry = np.stack([y, y])
-    engine.save(master(wet if wet is not None else dry).astype(np.float32), out_path)
+        if step["id"] in PREP:
+            y = _prep_step(y, step).astype(np.float32)
+        elif step["id"] in POLISH:
+            if prep_path and dry is None:
+                np.save(prep_path, y)
+                dry = True
+            y = _polish_step(y, step["id"], s).astype(np.float32)
+    if prep_path and dry is None:
+        np.save(prep_path, y)
+    engine.save(master(space(y, s)).astype(np.float32), out_path)
     if dry_path:
-        engine.save(master(dry).astype(np.float32), dry_path)
+        engine.save(master(np.stack([y, y])).astype(np.float32), dry_path)
     progress("meta", key=tune.autotune.last_key)
     return out_path
 

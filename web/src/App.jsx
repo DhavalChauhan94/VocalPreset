@@ -3,6 +3,7 @@ import Orb from "./components/Orb.jsx";
 import DotWaves from "./components/DotWaves.jsx";
 import Autotune from "./components/Autotune.jsx";
 import Report from "./components/Report.jsx";
+import MixPanel from "./components/MixPanel.jsx";
 import { Dropzone, Pipeline, Waveform } from "./components/Parts.jsx";
 
 const STAGE_PALETTES = [
@@ -133,8 +134,25 @@ export default function App() {
       await poll(job.id, ["done"]);
     } catch (e) { setErr(explain(e)); setJob((j) => j && { ...j, status: "analysed" }); }
   };
+  // ---------- 4. shape the mix: re-render on the server, keep playing where you were ----------
+  const mixPolling = useRef(false), resumeAt = useRef(null);
+  const [mixError, setMixError] = useState("");
+  const tweak = async (patch) => {
+    setMixError("");
+    try {
+      const r = await fetch(`/api/takes/${job.id}/mix`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "Couldn't update the mix");
+      setJob((j) => ({ ...j, status: "mixing", settings: d.settings }));
+      if (mixPolling.current) return;              // one poller; the server publishes only the newest tweak
+      mixPolling.current = true;
+      try { await poll(job.id, ["done"]); } finally { mixPolling.current = false; }
+    } catch (e) { setMixError(explain(e)); }
+  };
   const busy = job?.status === "analysing" || job?.status === "fixing";
-  const done = job?.status === "done";
+  const done = job?.status === "done" || job?.status === "mixing";
   const nProblems = job?.analysis?.problems?.problems?.length ?? 0;
 
   // ---------- A/B audio engine: both files play in sync, we cross-fade gains ----------
@@ -193,7 +211,14 @@ export default function App() {
     }, 100);
     return () => clearInterval(id);
   }, [playing]);
-  useEffect(() => { stop(); setT(0); setShowing("after"); }, [job?.mp3]);
+  useEffect(() => {
+    if (mixPolling.current || job?.status === "mixing" || (job?.mp3 || "").includes("_v")) {
+      const a = els.current.after;                 // a tweak: remember where we were and keep going
+      resumeAt.current = { pos: a?.currentTime || 0, play: playing };
+      return;
+    }
+    stop(); setT(0); setShowing("after");
+  }, [job?.mp3]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getAnalyser = useCallback(() => (playing ? an.current : null), [playing]);
   const lightMode = theme === "light";
@@ -325,6 +350,9 @@ export default function App() {
               <input type="checkbox" checked={matchLevel} onChange={(e) => setMatchLevel(e.target.checked)} className="size-4 accent-ember" />
             </label>
 
+            <MixPanel settings={job.settings} busy={job.status === "mixing"} error={mixError || job.mix_error}
+              onChange={tweak} onReset={() => tweak({ reset: true })} />
+
             <div className="mt-4 grid grid-cols-2 gap-2">
               <a href={job.mp3} download className="rounded-2xl bg-fg py-3 text-center font-semibold text-bg transition active:scale-[.98]">Download MP3</a>
               <a href={job.wav} download className="rounded-2xl border border-fg/15 py-3 text-center font-semibold transition hover:bg-fg/5 active:scale-[.98]">WAV 24-bit</a>
@@ -340,7 +368,15 @@ export default function App() {
 
         {/* always mounted: Web Audio binds to these elements once */}
         <audio ref={(a) => (els.current.after = a)} src={done ? job.mp3 : undefined} preload="auto"
-          onLoadedMetadata={(e) => setDur(e.target.duration)} onEnded={stop} />
+          onLoadedMetadata={(e) => {
+            setDur(e.target.duration);
+            const r = resumeAt.current;
+            if (r) {                                   // new render of the same take: same spot, same play state
+              resumeAt.current = null;
+              e.target.currentTime = els.current.before.currentTime = Math.min(r.pos, e.target.duration || r.pos);
+              if (r.play) play();
+            }
+          }} onEnded={stop} />
         <audio ref={(a) => (els.current.before = a)} src={done ? job.raw : undefined} preload="auto" />
 
         <footer className="mt-auto pt-10 text-center text-xs text-mist/50">

@@ -29,11 +29,11 @@ cd web && npx vite            # UI hot reload on :5173 (proxies /api → :8080)
 fst_reader.py   .fst → presets/<sound>.json   (FLhd/FLdt events; per-plugin blob decoders)
 engine.py       load → pre_clean → run_chain (FL plugins) → part tweaks → mix/master
 app.py          /api/takes (analyse → key → fix, the current UI) · legacy /api/jobs + /api/sounds · serves web/dist
-fixer.py        measured studio chain (denoise → EQ-to-target → exciter → comp → de-ess → space → TP master) · score()
+fixer.py        studio chain: PREP (clean/hum/resonance/auto-tune, cached) → POLISH (scaled by Mix) → SPACE (doubler, ducked convolution reverb + ping-pong) → TP master · render() for Mix-panel tweaks
 tune.py         auto-tune: WORLD vocoder <5 kHz on voiced frames, original air/consonants kept   keys.py  key-service + librosa backup
 analysis.py     Phantom (WSL) full_diagnostic over MCP
 match.py        our render vs FL Studio's render (per-band dB, LUFS, peak)
-web/src/        App.jsx · components/{Report,Autotune,Orb,DotWaves,Pickers,Parts}.jsx · index.css (theme tokens)
+web/src/        App.jsx · components/{Report,Autotune,MixPanel,Orb,DotWaves,Pickers,Parts}.jsx · index.css (theme tokens)
 presets/        decoded sounds, by part: lead/ backing/ adlib/ (+ fx/, not registered)   samples/  source .fst files
 ```
 

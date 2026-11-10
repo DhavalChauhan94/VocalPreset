@@ -158,7 +158,7 @@ export default function Report({ take }) {
       </section>
     );
   }
-  const done = take.status === "done" && take.score_after != null;
+  const done = (take.status === "done" || take.status === "mixing") && take.score_after != null;
   const problems = a.problems?.problems ?? [];
   const leftTypes = new Set((take.analysis_after?.problems?.problems ?? []).map((p) => p.type));
   const steps = take.steps ?? take.plan ?? [];
