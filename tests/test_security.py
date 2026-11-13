@@ -1,3 +1,4 @@
+import os
 import subprocess
 
 import pytest
@@ -33,3 +34,16 @@ def test_oversized_upload_refused_before_reading():
 def test_uploads_and_paths_are_never_served():
     for name in ("0123456789ab_in.wav", "0123456789ab_beat.wav", "..%2Fapp.py", "0123456789ab_s2.flac"):
         assert client.get(f"/api/file/{name}").status_code == 404
+
+
+def test_restart_clears_unreachable_renders_and_uploads(tmp_path, monkeypatch):
+    # jobs are in memory: after a restart old files can't be reached, so startup deletes them
+    for name in ("OUT", "TAKES"):      # temp folders: never touch a running server's files
+        (tmp_path / name).mkdir()
+        monkeypatch.setattr(app, name, str(tmp_path / name))
+    paths = [os.path.join(app.OUT, "feedfacecafe.mp3"), os.path.join(app.TAKES, "feedfacecafe_in.wav")]
+    for p in paths:
+        open(p, "wb").write(b"x")
+    with TestClient(app.app):          # entering the client runs the app's startup
+        pass
+    assert not any(os.path.exists(p) for p in paths)

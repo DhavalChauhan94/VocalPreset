@@ -10,17 +10,19 @@
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Touching the API, engine pipeline, auto-tune, frontend, A/B audio graph |
 | [PRESETS.md](PRESETS.md) | Adding an FL preset, decoding a plugin, mapping a new plugin |
 | [HANDOVER.md](HANDOVER.md) | Current state, measurements, unverified values, known issues, next steps |
+| [CHANGELOG.md](CHANGELOG.md) | What changed, day by day (add an entry with every merge to main) |
 
 ## What this is
-A web app that makes a raw vocal sound mixed in one tap:
-- **Input:** a dry vocal, a **sound** (a decoded FL Studio `.fst` mixer preset), a **part** (Lead, Backing or Ad-libs), and optionally a beat.
+A web app that makes a raw vocal sound studio-finished in one tap:
+- **Flow:** a dry vocal → Phantom analysis → pick a **sound** (Rap / Melodic rap / Singer-Pop, `fixer.STYLES`) → optional auto-tune (key from the vocal or a beat) → fix → live mix rack → MP3/WAV.
+- **Kept for the artist dashboard, not in the UI:** the FL Studio preset engine (`fst_reader.py`, `engine.process`, `presets/`).
 - **Engine:** Python, built on Spotify's pedalboard plus librosa.
 - **API:** FastAPI on **:8080**.
 - **UI:** React 18, Vite 6, Tailwind 4.1, three.js and Headless UI in `web/`, built into `web/dist` and served by FastAPI.
 
 ## Run
 ```bash
-./start.sh                    # venv + deps + UI build + server → http://localhost:8080
+./start.sh  (Windows: start.bat)   # venv + deps + UI build + server → http://localhost:8080
 cd web && npx vite            # UI hot reload on :5173 (proxies /api → :8080)
 ```
 
@@ -29,11 +31,11 @@ cd web && npx vite            # UI hot reload on :5173 (proxies /api → :8080)
 fst_reader.py   .fst → presets/<sound>.json   (FLhd/FLdt events; per-plugin blob decoders)
 engine.py       load → pre_clean → run_chain (FL plugins) → part tweaks → mix/master
 app.py          /api/takes (analyse → key → fix, the current UI) · legacy /api/jobs + /api/sounds · serves web/dist
-fixer.py        studio chain: PREP (clean/hum/resonance/auto-tune, cached) → POLISH (scaled by Mix) → SPACE (doubler, ducked convolution reverb + ping-pong) → TP master · render() for Mix-panel tweaks
+fixer.py        STYLES (rap / melodic / pop: tone target, dynamics, space, auto-tune default) · studio chain: PREP (clean/hum/resonance/auto-tune, cached) → POLISH (scaled by Mix) → SPACE (doubler, ducked convolution reverb + ping-pong) → TP master · render() for Mix-panel tweaks
 tune.py         auto-tune: WORLD vocoder <5 kHz on voiced frames, original air/consonants kept   keys.py  vocal held-note key detector (+ beat via key-service)
 analysis.py     Phantom (WSL) full_diagnostic over MCP
 match.py        our render vs FL Studio's render (per-band dB, LUFS, peak)
-web/src/        App.jsx · mixEngine.js (live mixer) · components/{Report,Autotune,MixPanel,Knob,Orb,DotWaves,Pickers,Parts}.jsx · index.css (theme tokens)
+web/src/        App.jsx · mixEngine.js (live mixer) · components/{StylePicker,Report,Autotune,MixPanel,Knob,Orb,DotWaves,Pickers,Parts}.jsx · index.css (theme tokens)
 presets/        decoded sounds, by part: lead/ backing/ adlib/ (+ fx/, not registered)   samples/  source .fst files
 ```
 
@@ -50,14 +52,18 @@ presets/        decoded sounds, by part: lead/ backing/ adlib/ (+ fx/, not regis
 
 ## Conventions
 - Audio inside the engine is `float32`, shape `(channels, samples)`, at 44.1 kHz. Use `load()` / `save()`.
-- Loudness targets: -18 LUFS before the chain, -16 LUFS for vocal-only output, -14 LUFS for a mix with a beat, -1 dBFS ceiling.
+- Loudness targets: -18 LUFS before the chain, stems at -16 LUFS, the fixed vocal mastered to -12 LUFS / -1.2 dBTP (legacy preset engine: -16 vocal, -14 with a beat).
 - `engine.process(..., progress=cb)` reports `stage`, `plugin` (with its slot) and `meta` (key, bpm, lufs_raw). The UI's live pipeline depends on these.
 - Adding a sound means: decode it into `presets/<id>.json`, then add an entry to `engine.SOUNDS`. The UI picks it up from `/api/sounds`.
 
 ## Verify after a change
 ```bash
-.venv/bin/python fst_reader.py samples/nofalltypeshi.fst >/dev/null && echo decode-ok
-.venv/bin/python engine.py <vocal> lead /tmp/t.wav --sound no_fall   # expect -16.0 LUFS, peak -1.0
+.venv/Scripts/python -m pytest tests                                # Windows; macOS/Linux: .venv/bin/python
 cd web && npx vite build                                            # UI must build clean
 ```
-Then open the UI, process a vocal, and check that Before/After switch while playing and that the plugin list advances.
+Then open the UI, drop a real take, pick each sound, fix, turn knobs while it plays, and download both formats.
+Legacy preset engine:
+```bash
+.venv/bin/python fst_reader.py samples/nofalltypeshi.fst >/dev/null && echo decode-ok
+.venv/bin/python engine.py <vocal> lead /tmp/t.wav --sound no_fall   # expect -16.0 LUFS, peak -1.0
+```

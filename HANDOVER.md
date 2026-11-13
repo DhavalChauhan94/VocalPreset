@@ -1,70 +1,76 @@
 # Handover
 
-_Last updated: 2026-11-07. Prototype stage, runs locally. Not deployed anywhere._
+_Last updated: 2026-11-12. Prototype, runs locally, not deployed. What changed, day by day, is in [CHANGELOG.md](CHANGELOG.md)._
 
 ## What works today
-- **2 sounds** decoded from real FL presets:
-  - **Studio Air** (`untitled2.fst`, 7 plugins)
-  - **No Fall** (`nofalltypeshi.fst`, 6 plugins, including Pitcher auto-tune)
-- **3 parts:** Lead, Backing, Ad-libs, each layering its own changes on top of the FL chain.
-- **Auto-tune** with automatic key detection. Users can override with any of 24 keys or the preset's own scale.
-- **Optional beat:** detects its BPM (this sets the delay time), mixes the vocal in, masters to -14 LUFS.
-- **Web UI:**
-  - live plugin-by-plugin progress
-  - synced Before/After with level matching
-  - waveform you can scrub
-  - MP3 and 24-bit WAV downloads
-  - light, dark and system themes
-  - phone-friendly layout, plus a two-column layout on desktop
+- **Analysis:** Phantom (FadeLab) runs about 20 checks on every upload and produces a studio-readiness score (0–100) and an animated plain-English report. If Phantom isn't installed, the fix still runs with a generic polish.
+- **Vocal sounds:**
+  - **Rap**, **Melodic rap** and **Singer / Pop** (`fixer.STYLES`), picked first after upload.
+  - Each one shapes compression, gate, tone, saturation and space, and sets an auto-tune default.
+  - The numbers and their sources are in ARCHITECTURE.md.
+- **Auto-tune:**
+  - Light, Medium or Heavy, using the WORLD vocoder below 5 kHz, with the original air and consonants kept.
+  - Key from the sung notes, or from the beat (most accurate).
+  - When two keys fit equally well, the UI says so and offers one-tap choices.
+- **Fix:**
+  - cleanup (denoise, hum notches, resonance cuts) → polish → space (doubler, convolution reverb, ping-pong echo, both ducked under the voice);
+  - master to -12 LUFS with true peaks ≤ -1.2 dBTP;
+  - then re-analysed, with a before → after score.
+- **Mix rack:** 8 knobs (Mix, starting at 40%, Reverb, Echo, Repeats, Width, Wobble, Brightness, Warmth) plus reverb and echo types. Everything is mixed live in the browser, so every change is instant. Downloads re-render on the server with the same numbers.
+- **Downloads:**
+  - MP3 320k (ID3v2.3) and 16-bit WAV, named `<upload> - <Style> mix`;
+  - a **Share MP3** button using the Web Share API.
+- **Security:**
+  - uploads are kept private and never served;
+  - strict download names;
+  - ffmpeg decodes are whitelisted and capped;
+  - request size is limited;
+  - server paths are never sent to the browser.
+- **Housekeeping:** leftover renders and uploads from earlier runs are deleted when the server starts.
 
-## Measured results (on the artist's 2:23 WhatsApp vocal)
-| Check | Result |
-|---|---|
-| Output loudness / peak | -16.0 LUFS / -1.0 dBFS, every sound and part |
-| Clicks per minute (raw = 671) | Studio Air 607 / 334 / 389 · No Fall 577 / 239 / 260 (lead / backing / adlib) |
-| Auto-tune accuracy (detected key) | Notes within 10 cents went from 14% to 35% |
-| Render time | Studio Air ~3 s · No Fall ~15 s (pYIN pitch tracking is the slow part) |
+## Measured results
+**Vocal sounds on two real takes** (`Recording (154)`, `Recording (261)`). Every row hits -12 LUFS with true peak ≤ -1.09 dBTP and tone within 1.8 dB of the style's target:
 
-## Not verified yet: the most important open item
-Several plugin values are **best-effort decodes**, marked **check** in [PRESETS.md](PRESETS.md):
-- the Parametric EQ 2 Hz scale and band width
-- the Reeverb 2 field order and units
-- the Phaser fields
-- Pitcher speed
-- Delay 3 time
+| Take | Rap | Melodic | Pop |
+|---|---|---|---|
+| 154 (noisy room), readiness | 68 → 98 | 68 → 98 | 68 → 98 |
+| 261 (sung melody), readiness | 67 → 88* | 67 → 100 | 67 → 100 |
+| reverb level vs dry (dB) | -27.7 | -11.5 | -15.1 |
+| width (dB) | -28 | -12 | -15 |
 
-**How to close it:**
-1. Get the same raw vocal rendered **by FL Studio** through each preset.
-2. Run `match.py` against our render.
-3. Tune until every band is within ≤ 1 dB.
+\* Rap leaves auto-tune off, so Phantom reads the held notes' harmonics as a resonance. Read as F# minor notes, the flag goes away.
 
-Screenshots of each plugin window from FL also help.
+**Key detection:**
+- **Benchmark:** 96% right 7 notes / 88% exact key on 96 held-out synthetic melodies.
+- **Recording 261** (F# minor): on its own it reads "C# minor or F# minor" with an F# minor chip; with the beat it reads F# minor at 0.87 confidence.
+- **Heavy auto-tune** on 261 takes the voice from 29% to 90% of frames within 15 cents.
 
-## Known issues and caveats
-- **Studio Air's EQ 3, band 1 is +18 dB (the maximum) at about 67 Hz.** That's a large bass boost on a vocal and possibly a mistake in the original preset. Ask the producer.
-- **Key detection:** on the test vocal, 60 s read as C minor and the full song as G# major (they share 6 of 7 notes). Users can override it.
-- **Timing:** the delay is synced to 140 BPM when there's no beat.
-- **Jobs are in memory:** a restart loses job status, but files stay in `out/jobs/`. There's no cleanup of old files yet.
-- **Processing is single-process threads:** fine locally, but needs a job queue before public hosting.
-- **The UI bundle is about 700 kB,** mostly three.js. Not code-split yet.
+**Speed:**
+- fix: ~10 s without auto-tune, ~35–45 s with it;
+- a mix export: ~9 s;
+- the page's first load: 284 kB of JS, with three.js loading after the page shows.
 
-## Planned next (designed, not built)
-Clean-up features, each toggleable on the result screen with instant A/B:
-1. **Breath and background-noise removal:** a noise profile learned from the gaps (`noisereduce`), and breaths turned down rather than cut. Strength: light, medium or strong.
-2. **Word-by-word volume rider:** per-word loudness pulled toward a target within ±3, ±6 or ±9 dB, applied before the FL chain.
-3. **Timing correction:** phrase starts nudged toward a 1/16 grid taken from the beat (or a BPM the user enters), at 0–100% strength. Phrase-level only, so there's no stretching damage.
+## Known issues
+- **Sound quality isn't there yet.** This is the owner's verdict after listening, and the next focus. Judge changes on real takes like 154 and 261, by measuring (tone, LUFS, clicks, Phantom score), not on synthetic tones.
+- **The readiness score measures the full fix (Mix 100%), but the default Mix is 40%.** At 40%, take 154 measures 70 instead of 98 because the polish is only partly applied. Decide whether the score should describe the 40% download.
+- **A WAV longer than about 1.5 minutes is over WhatsApp's 16 MB audio limit.** It has to go as a Document; the MP3 sends as audio.
+- **The Share button** only appears over HTTPS or on localhost, not when a phone opens the PC's LAN address.
+- **Jobs live in memory:** a restart forgets every take, and its files are deleted at the next start. Within a run there's no time limit yet (`shortcut:` in `app.py`).
+- **One process with threads:** fine locally. Before public hosting it needs a job queue, storage with a time limit, and auth.
+- **Phantom runs in WSL Ubuntu on Windows** (see SETUP.md). The key-service runs as a Docker container in WSL, and `start.ps1` keeps WSL awake while the site runs.
 
-Planned approach: a new `cleanup.py`, called once before `run_chain`. Cache the pitch analysis so each variant renders in 3–5 s, and show what changed on the waveform (breath marks, rider curve, arrows on moved phrases).
+## Not verified
+- The style tone targets are measured on two takes only. They're marked **check** in `fixer.py`.
+- The FL preset decodes are marked **check** in [PRESETS.md](PRESETS.md). The preset engine isn't in the UI right now.
 
-**Open decisions for the owner:**
-- pre-render all variants vs render each when toggled
-- BPM box vs disabling timing when there's no beat
-- which features are on by default
-
-Other ideas: pitch-correction strength slider, more FL presets, user accounts, hosting.
+## Next steps
+1. **Sound quality:** more real takes in each style, A/B against reference tracks, and a fix for the score-versus-40% question above.
+2. **More vocal sounds** later (the owner said "we can add more later"). Adding one means a new entry in `fixer.STYLES` plus `VOCAL_STYLES` in `web/src/components/StylePicker.jsx`.
+3. **Artist dashboard and profiles:** the FL presets (`presets/`, `engine.py`, `/api/sounds`) are kept for this.
+4. **Hosting:** job queue, storage limits, HTTPS, accounts.
 
 ## Ground rules
-- This repo is **standalone**. Keep it out of any other company or monorepo folder.
-- **Never commit a raw vocal.** Artists' recordings are private; `.gitignore` blocks audio in `samples/`.
-- Keep FL decoding (`fst_reader.py`) separate from the DSP (`engine.py`). New features go in new modules where possible.
-- Measure before claiming "sounds like FL": use `match.py`, click counts and LUFS, not guesses.
+- **Never commit a raw vocal.** Artists' recordings are private, and `.gitignore` blocks audio in `samples/` and all of `out/`.
+- **`fixer.space()`/`mixdown()` and `web/src/mixEngine.js` must change together,** or the preview and the download drift apart.
+- **Measure before claiming a sound is better:** Phantom score, LUFS, true peak, clicks, and the tone error against the style target.
+- **Feature work happens on a branch.** Merge into `main` once tests pass and the UI builds.

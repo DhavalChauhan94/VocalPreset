@@ -7,13 +7,14 @@ Run:  .venv/bin/uvicorn app:app --host 0.0.0.0 --port 8080
 """
 import os
 import shutil
-import subprocess
 import tempfile
 import threading
 import re
 import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import Literal
+from urllib.parse import quote
 
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -31,6 +32,7 @@ OUT = os.path.join(HERE, "out", "jobs")          # generated mp3/wav, served by 
 TAKES = os.path.join(HERE, "out", "takes")       # raw uploads: never served
 # Only our own render names can be downloaded, never an uploaded file (stops stored HTML/SVG from our origin).
 _SERVABLE = re.compile(r"^[0-9a-f]{12}(_raw|_v\d{1,4})?\.(mp3|wav)$|^[0-9a-f]{12}_s[01]\.flac$")
+_MIME = {"mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac"}   # not the OS registry's guess
 _MEDIA_EXT = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".mpeg", ".mp4", ".mov", ".webm", ".3gp", ".amr", ".wma", ".aiff", ".aif"}
 DIST = os.path.join(HERE, "web", "dist")
 os.makedirs(OUT, exist_ok=True)
@@ -38,7 +40,20 @@ os.makedirs(TAKES, exist_ok=True)
 MAX_MB = 80
 JOBS: dict[str, dict] = {}
 
-app = FastAPI(title="VocalPreset")
+@asynccontextmanager
+async def _lifespan(_app):
+    """Jobs live in memory, so after a restart no one can reach the old renders or uploads: delete them
+    (the folder otherwise grew ~0.6 GB a day, and it holds copies of people's vocals)."""
+    for folder in (OUT, TAKES):
+        for name in os.listdir(folder):
+            try:
+                os.unlink(os.path.join(folder, name))
+            except OSError:      # a sub-folder or a file still open elsewhere: leave it
+                pass
+    yield
+
+
+app = FastAPI(title="VocalPreset", lifespan=_lifespan)
 
 
 @app.middleware("http")
@@ -64,8 +79,22 @@ def _save_upload(up: UploadFile, folder: str) -> str:
     return path
 
 
-def _ffmp3(src, dst, kbps=320):
-    engine.run_ffmpeg([*engine.ffmpeg_input(src), "-vn", "-ac", "2", "-b:a", f"{kbps}k", dst])
+def _ffmp3(src, dst, kbps=320, title=None):
+    """MP3 that every phone and chat app plays: 44.1 kHz CBR, ID3v2.3 (+v1) tags; WhatsApp and older Android
+    players skip the v2.4 tags ffmpeg writes by default."""
+    tags = ["-metadata", f"title={title}"] if title else []
+    engine.run_ffmpeg([*engine.ffmpeg_input(src), "-vn", "-ac", "2", "-ar", str(engine.SR), "-c:a", "libmp3lame",
+                       "-b:a", f"{kbps}k", "-id3v2_version", "3", "-write_id3v1", "1", *tags, dst])
+
+
+def _title(filename):
+    """The upload's name, made safe for a download name and a tag: "Recording (154).wav" -> "Recording (154)"."""
+    stem = os.path.splitext(os.path.basename(filename or ""))[0]
+    return re.sub(r"[^\w \-()]+", "", stem, flags=re.ASCII).strip()[:60] or "vocal"
+
+
+def _download_name(t, ext):
+    return f"{t.get('title', 'vocal')} - {fixer.STYLES[t.get('style', fixer.DEFAULT_STYLE)]['file']} mix.{ext}"
 
 
 def _peaks(path, n=600):
@@ -172,7 +201,7 @@ def _analyse_take(tid):
         t.update(status="error", error="We couldn't read this file as audio. Try an mp3, wav, m4a or a voice note.")
 
 
-def _fix_take(tid, autotune, key):
+def _fix_take(tid, autotune, key, style):
     t = JOBS[tid]
 
     def progress(kind, **kw):
@@ -182,17 +211,17 @@ def _fix_take(tid, autotune, key):
             t.update({k: v for k, v in kw.items() if v is not None})
 
     try:
-        steps = fixer.plan(t.get("analysis"), autotune, key)
+        steps = fixer.plan(t.get("analysis"), autotune, key, style)
         t.update(steps=steps, chain=[s["label"] for s in steps], slot=0)
         wav = os.path.join(OUT, f"{tid}.wav")
         dry = os.path.join(TAKES, f"{tid}_dry.wav")      # no reverb: Phantom hears reverb tails as noise
-        t.update(settings=fixer.settings(), mix_version=0)  # each "Fix" starts from the one-click mix
+        t.update(settings=fixer.settings(style=style), mix_version=0)  # each "Fix" starts from the style's one-click mix
         stems = [os.path.join(OUT, f"{tid}_s{i}.flac") for i in (0, 1)]   # for the live Mix rack in the browser
-        duck = fixer.fix(t["input"], wav, steps, progress, dry_path=dry, stem_paths=stems)
+        duck = fixer.fix(t["input"], wav, steps, progress, dry_path=dry, stem_paths=stems, style=style)
         t.update(stems=[f"/api/file/{tid}_s{i}.flac?t={int(time.time())}" for i in (0, 1)],
                  duck=np.round(duck, 4).tolist(), fx=fixer.FX)
         t.update(stage="Checking the result", slot=len(steps))
-        _ffmp3(wav, wav[:-4] + ".mp3")
+        _ffmp3(wav, wav[:-4] + ".mp3", title=_download_name(t, "mp3")[:-4])
         y, _ = engine.sf.read(wav, always_2d=True)
         t.update(lufs_out=round(float(engine.lufs(y.T)), 2), peaks_after=_peaks(wav),
                  wav=f"/api/file/{tid}.wav?t={int(time.time())}", mp3=f"/api/file/{tid}.mp3?t={int(time.time())}")   # ?t: re-fix = new URL, no stale cache
@@ -219,7 +248,7 @@ def _mix_take(tid, version, s):
         if t.get("mix_version") != version:       # a newer export arrived meanwhile: drop this one
             os.unlink(wav)
             return
-        _ffmp3(wav, wav[:-4] + ".mp3")
+        _ffmp3(wav, wav[:-4] + ".mp3", title=_download_name(t, "mp3")[:-4])
         y, _ = engine.sf.read(wav, always_2d=True)
         old = [t.get("wav"), t.get("mp3")]
         t.update(settings=s, lufs_out=round(float(engine.lufs(y.T)), 2),
@@ -257,9 +286,9 @@ async def create_take(vocal: UploadFile = File(...)):
     ext = os.path.splitext(vocal.filename or "")[1].lower()
     ext = ext if ext in _MEDIA_EXT else ".bin"   # ffmpeg sniffs the content; the name is only a hint
     path = _save_upload(vocal, TAKES)
-    final = os.path.join(TAKES, f"{tid}_in{ext}")   # shortcut: no TTL cleanup of takes yet; add before going public
+    final = os.path.join(TAKES, f"{tid}_in{ext}")   # shortcut: cleared only on restart (_lifespan); add a TTL before going public
     os.replace(path, final)
-    JOBS[tid] = {"id": tid, "input": final, "status": "analysing", "stage": "Listening to your take",
+    JOBS[tid] = {"id": tid, "input": final, "title": _title(vocal.filename), "status": "analysing", "stage": "Listening to your take",
                  "slot": None, "t0": time.time()}
     threading.Thread(target=_analyse_take, args=(tid,), daemon=True).start()
     return {"id": tid}
@@ -287,6 +316,7 @@ _KEY_RE = re.compile(r"^[A-G]#? (major|minor)$")
 class FixRequest(BaseModel):
     autotune: Literal["off", "light", "medium", "heavy"] = "off"
     key: str | None = None
+    style: Literal["rap", "melodic", "pop"] = fixer.DEFAULT_STYLE   # the vocal sound: see fixer.STYLES
 
 
 @app.post("/api/takes/{tid}/fix")
@@ -298,8 +328,9 @@ def take_fix(tid: str, req: FixRequest):
         raise HTTPException(422, 'key must look like "A minor" or "F# major"')
     for k in ("analysis_after", "analysis_after_error", "score_after", "fixed", "error", "key"):
         t.pop(k, None)
-    t.update(status="fixing", stage="Planning the fix", t_fix=time.time(), autotune=req.autotune)
-    threading.Thread(target=_fix_take, args=(tid, req.autotune, req.key), daemon=True).start()
+    t.update(status="fixing", stage="Planning the fix", t_fix=time.time(), autotune=req.autotune, style=req.style,
+             style_label=fixer.STYLES[req.style]["label"])
+    threading.Thread(target=_fix_take, args=(tid, req.autotune, req.key, req.style), daemon=True).start()
     return {"id": tid}
 
 
@@ -309,7 +340,9 @@ class MixRequest(BaseModel):
     reverb_style: str | None = None
     delay: float | None = None
     delay_style: str | None = None
+    feedback: float | None = None
     width: float | None = None
+    mod: float | None = None
     brightness: float | None = None
     warmth: float | None = None
     reset: bool = False          # back to the one-click mix
@@ -320,8 +353,9 @@ def take_mix(tid: str, req: MixRequest):
     t = _take(tid, "done", "mixing")
     if "duck" not in t:
         raise HTTPException(409, "fix the take first")
-    s = fixer.settings() if req.reset else fixer.settings(
-        {**t.get("settings", {}), **req.model_dump(exclude_none=True, exclude={"reset"})})   # clamps + validates
+    style = t.get("style")
+    s = fixer.settings(style=style) if req.reset else fixer.settings(
+        {**t.get("settings", {}), **req.model_dump(exclude_none=True, exclude={"reset"})}, style)   # clamps + validates
     version = t.get("mix_version", 0) + 1
     t.update(status="mixing", stage="Exporting your mix", mix_version=version, mix_error=None)
     threading.Thread(target=_mix_take, args=(tid, version, s), daemon=True).start()
@@ -335,7 +369,10 @@ def job(job_id: str):
     j = dict(JOBS[job_id])
     j["elapsed"] = round(time.time() - j.pop("t_fix", j.pop("t0")), 1)
     j.pop("t0", None)
-    j.pop("input", None)   # server path, not for the client
+    for k in ("input", "beat"):   # server paths, not for the client
+        j.pop(k, None)
+    if "style" in j:
+        j["names"] = {ext: _download_name(j, ext) for ext in ("mp3", "wav")}
     return j
 
 
@@ -346,7 +383,12 @@ def file(name: str):
     path = os.path.join(OUT, name)
     if not os.path.exists(path):
         raise HTTPException(404)
-    return FileResponse(path, filename=f"vocalpreset-{name}")
+    ext = name.rsplit(".", 1)[1]
+    t = JOBS.get(name[:12], {})
+    nice = _download_name(t, ext) if ext in ("mp3", "wav") and "_raw" not in name and "style" in t else f"vocalpreset-{name}"
+    # both forms: filename* for browsers, plain filename for older download managers (nice is ASCII: see _title)
+    disp = f"attachment; filename=\"{nice}\"; filename*=utf-8''{quote(nice)}"
+    return FileResponse(path, media_type=_MIME[ext], headers={"Content-Disposition": disp})
 
 
 if os.path.isdir(DIST):

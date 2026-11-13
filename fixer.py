@@ -58,8 +58,9 @@ def _step(id_, label, why, fixes=(), **params):
     return {"id": id_, "label": label, "why": why, "fixes": list(fixes), "params": params}
 
 
-def plan(report, autotune="off", key=None):
+def plan(report, autotune="off", key=None, style="pop"):   # "pop" = DEFAULT_STYLE (defined below)
     pr = _problems(report)
+    why = STYLES[style]["why"]
     noisy = "noise_floor" in pr or "snr" in pr
     s = [_step("clean", "Clean up the recording",
                "Cuts rumble and removes the steady background hiss under your voice." if noisy
@@ -86,21 +87,18 @@ def plan(report, autotune="off", key=None):
                        (), level=autotune, key=key or "auto"))
     s.append(_step("bright", "Clarity and smooth air",
                    "Opens up the top of your voice with smooth, silky air instead of harsh fizz."))
-    s.append(_step("dynamics", "Thick, up-front vocal",
-                   "Two compressors plus a parallel 'New York' blend: every word sits forward, full and never squashed."))
+    s.append(_step("dynamics", f"{STYLES[style]['label']} dynamics", why["dynamics"]))
     s.append(_step("sibilance", "Tame harshness and S sounds",
                    "Harsh upper-mids and sharp 'S'/'T' sounds are turned down only at the moments they stab out.",
                    ("sibilance", "harshness")))
-    s.append(_step("tone", "Warmth and studio balance",
-                   "Adds tape-style warmth, then shapes your voice to a pro vocal's balance: full body, clear mids, smooth top.",
+    s.append(_step("tone", f"{STYLES[style]['label']} tone", "Tape-style saturation, then " + why["tone"][0].lower() + why["tone"][1:],
                    ("mud",)))
     s.append(_step("gate", "Silence the gaps", "Turns down background noise between phrases.", ("noise_floor", "snr")))
     if "clipping" in pr or "lossy_codec" in pr:
         s.append(_step("note", "Damage we can't fully undo",
                        "Distorted (clipped) or heavily compressed audio has lost detail for good. "
                        "We'll smooth it, but re-recording gives the best result.", ("clipping", "lossy_codec")))
-    s.append(_step("space", "Studio space",
-                   "A smooth plate reverb and ping-pong echo that duck while you sing and bloom in the gaps, plus a subtle double for width."))
+    s.append(_step("space", f"{STYLES[style]['label']} space", why["space"]))
     s.append(_step("master", "Loud and streaming-safe",
                    f"Masters to {TARGET_LUFS:.0f} LUFS with true peaks under {CEILING_DBTP} dB: loud, and never crackles.",
                    ("inter_sample_peak",)))
@@ -110,16 +108,59 @@ def plan(report, autotune="off", key=None):
 # ---------- user settings (the "Shape your mix" panel) ----------
 # mix scales everything (0 = your cleaned, tuned voice only; 1 = full studio chain). The rest are 0..1
 # except brightness/warmth (-1..1, 0 = our balance). Defaults are the one-click result.
-DEFAULTS = {"mix": 1.0, "reverb": 0.35, "reverb_style": "plate", "delay": 0.2, "delay_style": "eighth",
-            "width": 0.45, "brightness": 0.0, "warmth": 0.0}
-POLISH_AT = {"mix": 1.0, "brightness": 0.0, "warmth": 0.3}   # how the polished stem is always made
-REVERB_STYLES = {"room": (0.7, 0.008), "plate": (1.8, 0.025), "hall": (2.9, 0.04)}   # RT60 s, pre-delay s
+# mix 0.4: the blend people liked on first listen (the user's call, 2026-11-11); the rack goes up to 100%
+DEFAULTS = {"mix": 0.4, "reverb": 0.35, "reverb_style": "plate", "delay": 0.2, "delay_style": "eighth",
+            "feedback": 0.25, "width": 0.45, "mod": 0.1, "brightness": 0.0, "warmth": 0.0}
+# RT60 s, pre-delay s, how fast the highs die vs RT (lower = darker): a bright pop plate, a dark melodic hall
+REVERB_STYLES = {"room": (0.7, 0.008, 0.6), "plate": (1.8, 0.025, 0.7), "hall": (2.6, 0.035, 0.42)}
+
+# Three vocal styles, from engineers' own accounts (Sound On Sound "Inside Track" unless noted):
+# rap     Moneybagg Yo's engineer: "in your face and bone-dry", hates "delay throws, reverb swells"; a dbx 160 that
+#         "really crushes", parallel 1176, Manley midrange, air EQ, Culture Vulture weight. 40 (Drake): Auto-Tune on
+#         raps only to "centre the pitch". Kendrick (Ali): Renaissance compressor to smooth a raspy mid-range voice.
+# melodic Travis Scott / Don Toliver / Future / The Weeknd: hard Auto-Tune (Antares: retune 0-5 for Travis), a
+#         quarter-note delay, long dark reverb (Antares), a flanger "wobble" and boost above 5.2 kHz (Future's engineer),
+#         detuned doubles + MicroShift width and Decapitator grit after tuning (The Weeknd's engineer).
+# pop     Ariana / Dua Lipa / Olivia Rodrigo / Billie Eilish: serial compression (Nigro: "double compressing"),
+#         harshness control ("I hate harsh 3-4 kHz", Charlie Holmes), an air shelf, the reverb as "the flavour" (Nigro),
+#         ducked under the vocal (Dua Lipa). Also suits lo-fi. Tone targets are dB vs 1 kHz, like TARGET ("check").
+STYLES = {
+    "rap": {"label": "Rap", "file": "Rap", "autotune": "off",
+            "target": [-6.0, -6.5, -4.5, 0.0, -2.5, -8.0, -13.5, -18.5],
+            "polish": {"thr1": -27.0, "ratio1": 5.0, "thr2": -23.0, "ratio2": 3.0, "parallel": 0.6, "peak": 5.5,
+                       "gate": -40.0, "gate_below": 17.0,
+                       "saturation": 0.32, "exciter": 0.10, "harsh": 4.0, "deess": 9.0},
+            "settings": {"reverb": 0.06, "reverb_style": "room", "delay": 0.08, "delay_style": "slap",
+                         "feedback": 0.05, "width": 0.12, "mod": 0.0},
+            "why": {"dynamics": "Crushed like a rap record: hard compression plus a heavy parallel blend, so every bar hits.",
+                    "tone": "More midrange bite and a tight low end that sits on top of the beat's bass.",
+                    "space": "Bone-dry and in your face, with just a tiny room and slap so it isn't flat."}},
+    "melodic": {"label": "Melodic rap", "file": "Melodic", "autotune": "heavy",
+                "target": [-4.0, -5.0, -5.0, 0.0, -4.0, -9.5, -14.0, -18.5],
+                "polish": {"thr1": -22.0, "ratio1": 4.0, "thr2": -20.0, "ratio2": 3.0, "parallel": 0.35, "peak": 8.0, "gate": -32.0, "gate_below": 24.0,
+                           "saturation": 0.3, "exciter": 0.12, "harsh": 4.5, "deess": 9.0},
+                "settings": {"reverb": 0.55, "reverb_style": "hall", "delay": 0.4, "delay_style": "quarter",
+                             "feedback": 0.3, "width": 0.6, "mod": 0.45},
+                "why": {"dynamics": "Heavy, smooth compression with tape grit after the tuning, the wavy trap sound.",
+                        "tone": "Warm body and a smooth top, so the hard tuning sounds rich, not harsh.",
+                        "space": "A long dark hall, quarter-note echoes and wobbling wide doubles: the Travis / Don Toliver space."}},
+    "pop": {"label": "Singer / Pop", "file": "Pop", "autotune": "medium",
+            "target": [-5.0, -6.0, -5.0, 0.0, -3.5, -8.5, -12.5, -16.5],
+            "polish": {"thr1": -22.0, "ratio1": 3.0, "thr2": -20.0, "ratio2": 2.5, "parallel": 0.25, "peak": 8.0, "gate": -32.0, "gate_below": 24.0,
+                       "saturation": 0.15, "exciter": 0.12, "harsh": 5.0, "deess": 10.0},
+            "settings": {"reverb": 0.42, "reverb_style": "plate", "delay": 0.2, "delay_style": "eighth",
+                         "feedback": 0.22, "width": 0.45, "mod": 0.1},
+            "why": {"dynamics": "Two gentle compressors in a row: polished and even, never squashed.",
+                    "tone": "Open and airy with silky highs; harsh 3-4 kHz is tamed first.",
+                    "space": "A bright plate and soft echoes that duck while you sing, like a pop record."}},
+}
+DEFAULT_STYLE = "pop"
 DELAY_STYLES = {"slap": 0.11, "eighth": 0.214, "quarter": 0.428}                     # seconds (1/8, 1/4 at ~140 bpm)
 
 
-def settings(raw=None):
-    """Validated settings: unknown keys dropped, numbers clamped, styles checked."""
-    s = dict(DEFAULTS)
+def settings(raw=None, style=None):
+    """Validated settings (on top of the style's defaults): unknown keys dropped, numbers clamped, styles checked."""
+    s = {**DEFAULTS, **STYLES.get(style or "", {}).get("settings", {})}
     for k, v in (raw or {}).items():
         if k not in DEFAULTS or v is None:
             continue
@@ -129,7 +170,8 @@ def settings(raw=None):
             s[k] = v if v in DELAY_STYLES else s[k]
         else:
             lo = -1.0 if k in ("brightness", "warmth") else 0.0
-            s[k] = float(min(1.0, max(lo, float(v))))
+            hi = 0.7 if k == "feedback" else 1.0          # more feedback than this never dies away
+            s[k] = float(min(hi, max(lo, float(v))))
     return s
 
 
@@ -158,14 +200,6 @@ def band_spectrum(y):
     f = np.fft.rfftfreq(n, 1 / SR)
     b = np.array([10 * np.log10(P[(f >= lo) & (f < hi)].mean() + 1e-20) for lo, hi in BANDS])
     return b - b[3]
-
-
-def target_curve(brightness=0.0, warmth=0.0):
-    """TARGET tilted by the user's Brightness (top bands, up to +-6 dB) and Warmth (body, up to +-3 dB)."""
-    t = np.array(TARGET)
-    t += brightness * 6.0 * np.array([0, 0, 0, 0, 0.2, 0.45, 0.75, 1.0])
-    t += warmth * 3.0 * np.array([0.8, 1.0, 0.6, 0, 0, 0, -0.2, -0.3])
-    return t
 
 
 def denoise(y, reduce_db):
@@ -280,12 +314,12 @@ def reverb_ir(style):
     soft onset, pre-delay. Smooth and dense, unlike a comb-filter (Freeverb) reverb."""
     if style in _IR_CACHE:
         return _IR_CACHE[style]
-    rt, pre = REVERB_STYLES[style]
+    rt, pre, hi_k = REVERB_STYLES[style]
     n = int(SR * rt * 1.3)
     t = np.arange(n) / SR
     rng = np.random.default_rng(7)
     ir = np.zeros((2, n))
-    for lo, hi, k in ((60, 500, 1.15), (500, 4000, 1.0), (4000, 12000, 0.55)):   # band edges, RT multiplier
+    for lo, hi, k in ((60, 500, 1.15), (500, 4000, 1.0), (4000, 12000, hi_k)):  # band edges, RT multiplier
         sos = butter(2, [lo, hi], "band", fs=SR, output="sos")
         env = 10 ** (-3 * t / (rt * k))                                          # -60 dB at RT
         ir += sosfilt(sos, rng.normal(size=(2, n)), axis=1) * env
@@ -298,8 +332,8 @@ def reverb_ir(style):
 
 # Shared by the server render and the browser's live engine (sent to the UI as job["fx"]), so the
 # preview and the download are the same mix. 2nd-order Butterworth = a Web Audio biquad at Q 0.7071.
-FX = {"send_hp": 300.0, "send_lp": 8500.0, "reverb_gain": 0.55, "delay_gain": 0.5, "delay_fb": 0.32,
-      "delay_lp": 4500.0, "delays": DELAY_STYLES, "doubler": [[0.014, 0.0007, 0.31], [0.021, 0.0009, 0.23]],
+FX = {"send_hp": 300.0, "send_lp": 8500.0, "reverb_gain": 0.55, "delay_gain": 0.5,
+      "delay_lp": 4500.0, "mod_depth": 6.0, "mod_rate": 2.5, "delays": DELAY_STYLES, "doubler": [[0.014, 0.0007, 0.31], [0.021, 0.0009, 0.23]],
       "doubler_db": -8.0, "doubler_hp": 220.0, "doubler_lp": 10000.0, "bright_hz": 8000.0, "bright_db": 6.0,
       "warm_hz": 200.0, "warm_db": 3.0, "duck_rate": 100}
 STEM_LUFS = -16.0
@@ -336,21 +370,23 @@ def _duck_at(curve, n):
     return np.interp(np.arange(n), np.arange(len(curve)) * (SR // FX["duck_rate"]), curve).astype(np.float32)
 
 
-def doubler(y, amount):
-    """Two modulated copies (14/21 ms, slow wobble = a few cents of drift) panned L/R: width + richness."""
+def doubler(y, amount, mod=0.0):
+    """Two modulated copies (14/21 ms) panned L/R: width + richness. mod deepens and speeds up the wobble, from a
+    subtle double (a few cents of drift) to the chorus/flanger movement of melodic trap vocals."""
     n = np.arange(len(y))
     out = []
     for base, depth, rate in FX["doubler"]:
+        depth, rate = depth * (1 + FX["mod_depth"] * mod), rate * (1 + FX["mod_rate"] * mod)
         d = (base + depth * np.sin(2 * np.pi * rate * n / SR)) * SR
         out.append(np.interp(n - d, n, y, left=0.0))
     st = _bq("low", FX["doubler_lp"], _bq("high", FX["doubler_hp"], np.stack(out)))
     return st * (amount * 10 ** (FX["doubler_db"] / 20))
 
 
-def _echo(x, t, first=None):
+def _echo(x, t, fb, first=None):
     """Feedback delay: y[n] = x[n-D] + fb*y[n-D] (pedalboard Delay = a Web Audio DelayNode in a feedback loop)."""
     fx = [Delay(delay_seconds=first, feedback=0, mix=1.0)] if first else []
-    return Pedalboard(fx + [Delay(delay_seconds=2 * t, feedback=FX["delay_fb"], mix=1.0)])(x[None], SR)[0]
+    return Pedalboard(fx + [Delay(delay_seconds=2 * t, feedback=fb, mix=1.0)])(x[None], SR)[0]
 
 
 def space(y, s, duck):
@@ -358,7 +394,7 @@ def space(y, s, duck):
     a = s["mix"]
     st = np.stack([y, y])
     if s["width"] * a > 0:
-        st = st + doubler(y, s["width"] * a)
+        st = st + doubler(y, s["width"] * a, s["mod"])
     send = _bq("low", FX["send_lp"], _bq("high", FX["send_hp"], st))
     d = _duck_at(duck, len(y))
     if s["reverb"] * a > 0:
@@ -367,7 +403,7 @@ def space(y, s, duck):
         st = st + wet * d * (FX["reverb_gain"] * s["reverb"] * a)
     if s["delay"] * a > 0:
         t = DELAY_STYLES[s["delay_style"]]
-        echo = np.stack([_echo(send[0], t), _echo(send[1], t, first=t)])      # L: 2t, 4t.. R: t, 3t..
+        echo = np.stack([_echo(send[0], t, s["feedback"]), _echo(send[1], t, s["feedback"], first=t)])   # L: 2t.. R: t, 3t..
         st = st + _bq("low", FX["delay_lp"], echo) * d * (FX["delay_gain"] * s["delay"] * a)
     return st
 
@@ -390,7 +426,7 @@ def mixdown(s0, s1, duck, s):
 
 
 def render(s0, s1, duck, s, out_path):
-    engine.save(master(mixdown(s0, s1, duck, s)).astype(np.float32), out_path)
+    engine.save_16(master(mixdown(s0, s1, duck, s)).astype(np.float32), out_path)
 
 
 def _tp_envelope(st):
@@ -434,45 +470,45 @@ def _prep_step(y, step):
     return y
 
 
-def _polish_step(y, sid, s):
-    """One polish stage at the user's settings. a = mix amount scales every move; 0 leaves the voice alone."""
-    a = s["mix"]
-    if a <= 0:
-        return y
-    tgt = target_curve(s["brightness"], s["warmth"])
+def _polish_step(y, sid, style):
+    """One polish stage, shaped by the vocal style (see STYLES). The polished stem is always made at full strength;
+    the Mix knob blends it against the cleaned voice afterwards."""
+    st = STYLES[style]
+    p = st["polish"]
+    tgt = np.array(st["target"])
     if sid == "bright":
-        return exciter(eq_pass(y, 0.8 * a, tgt), 0.12 * a)
+        return exciter(eq_pass(y, 0.8, tgt), p["exciter"])
     if sid == "dynamics":
-        dry = _pb([Compressor(threshold_db=-22, ratio=1 + 3 * a, attack_ms=10, release_ms=80),
-                   Compressor(threshold_db=-20, ratio=1 + 2 * a, attack_ms=15, release_ms=150)], y)
+        # thresholds vs a -18 LUFS voice: rap's -27 dB works the whole voice (the dbx 160 "really crushes");
+        # -22 dB (melodic, pop) works the louder words. Deeper lifted take 154's room noise (score 98 -> 80).
+        dry = _pb([Compressor(threshold_db=p["thr1"], ratio=p["ratio1"], attack_ms=10, release_ms=80),
+                   Compressor(threshold_db=p["thr2"], ratio=p["ratio2"], attack_ms=15, release_ms=150)], y)
         # parallel ("New York") compression: a squashed copy under the voice = thickness without pumping
         crush = _pb([Compressor(threshold_db=-34, ratio=10, attack_ms=5, release_ms=120)], y)
         crush *= np.sqrt(np.mean(dry ** 2) / (np.mean(crush ** 2) + 1e-12))
-        y = dry + 0.35 * a * crush
-        return peak_control(y, 8.0)
+        return peak_control(dry + p["parallel"] * crush, p["peak"])
     if sid == "sibilance":
-        y = dyn_band(y, 2500, 5000, 4.0, 4.0 * a)        # harsh upper-mids, only when they stab
-        return dyn_band(y, 5500, 11000, 6.0, 9.0 * a)    # S / T
+        y = dyn_band(y, 2500, 5000, 4.0, p["harsh"])     # harsh upper-mids, only when they stab
+        return dyn_band(y, 5500, 11000, 6.0, p["deess"])  # S / T
     if sid == "tone":
-        y = saturate(y, a * (0.18 + 0.17 * s["warmth"]))
-        own = band_spectrum(y)
-        return derumble(match_tone(y, own + a * (tgt - own)))   # again: the 113 Hz body boost lifts rumble too
+        return derumble(match_tone(saturate(y, p["saturation"]), tgt))   # again: the body boost lifts rumble too
     if sid == "gate":
-        return gap_gate(y, floor_db=-32.0 * a)   # deeper than v1: parallel compression lifts the gaps
+        # compression lifts the gaps; rap's is lifted most, so its gate opens closer to the words (tight between bars)
+        return gap_gate(y, below_db=p["gate_below"], floor_db=p["gate"])
     return y
 
 
-def polish(prep, s=POLISH_AT):
+def polish(prep, style=DEFAULT_STYLE):
     y = prep
     for sid in POLISH:
-        y = _polish_step(y, sid, s).astype(np.float32)
+        y = _polish_step(y, sid, style).astype(np.float32)
     return y
 
 
-def fix(in_path, out_path, steps, progress=engine._noop, dry_path=None, stem_paths=None):
+def fix(in_path, out_path, steps, progress=engine._noop, dry_path=None, stem_paths=None, style=DEFAULT_STYLE):
     """One-click fix. Writes the finished vocal (default settings) to out_path and returns the duck curve.
     stem_paths=(s0, s1): your cleaned/tuned voice and the polished voice, level-matched at STEM_LUFS, for the
-    live Mix rack. dry_path: polished vocal mastered without reverb/echo, for Phantom (it reads tails as noise)."""
+    live Mix rack. dry_path: polished vocal (Mix 100%) mastered without reverb/echo, for Phantom (it reads tails as noise)."""
     tune.autotune.last_key = None
     y = engine.load(in_path).mean(axis=0)
     prep = None
@@ -483,16 +519,16 @@ def fix(in_path, out_path, steps, progress=engine._noop, dry_path=None, stem_pat
         elif step["id"] in POLISH:
             if prep is None:
                 prep = y
-            y = _polish_step(y, step["id"], POLISH_AT).astype(np.float32)
+            y = _polish_step(y, step["id"], style).astype(np.float32)
     s0 = engine.to_lufs((y if prep is None else prep)[None], STEM_LUFS)[0].astype(np.float32)
     s1 = engine.to_lufs(y[None], STEM_LUFS)[0].astype(np.float32)
     duck = duck_curve(s1)
-    render(s0, s1, duck, settings(), out_path)
+    render(s0, s1, duck, settings(style=style), out_path)
     if stem_paths:
         for path, stem in zip(stem_paths, (s0, s1)):
             write_stem(path, stem)
     if dry_path:
-        engine.save(master(np.stack([s1, s1])).astype(np.float32), dry_path)
+        engine.save(master(np.stack([s1, s1])).astype(np.float32), dry_path)   # the full fix (Mix 100%)
     progress("meta", key=tune.autotune.last_key)
     return duck
 

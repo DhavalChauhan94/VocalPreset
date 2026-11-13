@@ -18,9 +18,9 @@
 ## Current flow: analyse → (auto-tune key) → fix
 The UI no longer offers presets. The preset engine (`engine.process`, `/api/jobs`, `/api/sounds`, the `presets/` folder) stays for the future artist dashboard.
 
-1. **Analyse.** `POST /api/takes` (`vocal`) keeps the upload at `out/jobs/{id}_in.ext`. Phantom then writes `analysis` (its report), `score` (0–100 studio readiness) and `plan` (the fix steps it would run).
+1. **Analyse.** `POST /api/takes` (`vocal`) keeps the upload at `out/takes/{id}_in.ext` (never served; cleared at the next server start). Phantom then writes `analysis` (its report), `score` (0–100 studio readiness) and `plan` (the fix steps it would run).
 2. **Key (only if auto-tune is on).** `POST /api/takes/{id}/key` → `keys.detect`. It calls the key-service (`KEY_SERVICE_URL`, Essentia 3-profile vote) and falls back to `engine.detect_key` (librosa) if that's down.
-3. **Fix.** `POST /api/takes/{id}/fix` takes `{autotune: off|light|medium|heavy, key}`.
+3. **Fix.** `POST /api/takes/{id}/fix` takes `{autotune: off|light|medium|heavy, key, style: rap|melodic|pop}`.
    - `fixer.plan` turns findings into steps, and `fixer.fix` applies them with pedalboard + librosa + engine helpers.
    - The output is re-analysed and stored as `analysis_after`, `score_after` and `fixed[]`.
    - Clipping and lossy files are never counted as fixed: the damage is baked in, so the score keeps their penalty.
@@ -70,7 +70,7 @@ The UI no longer offers presets. The preset engine (`engine.process`, `/api/jobs
 
 - **Ducking:** reverb and delay both duck about 6 dB while the voice plays and bloom in the gaps.
 - **TARGET v2** (dB vs 1 kHz, loud frames, marked **check**): `[-4, -5.5, -5, 0, -4, -9, -14, -19]` across 113 Hz–12.8 kHz. That's warm body and a top end 4–5 dB below v1.
-- **Brightness/Warmth** tilt the target by up to ±6 / ±3 dB. `target_curve()` holds the tilt shapes.
+- **Brightness/Warmth** are shelves after the chain (`tone_knobs`: +-6 dB at 8 kHz, +-3 dB at 200 Hz), the same biquads in the browser.
 
 **Mix rack (live).** The fix writes two level-matched mono stems (-16 LUFS, 24-bit FLAC, sample-accurate) plus the ducking curve (100 Hz), and the job carries `fixer.FX`:
 - `{id}_s0.flac`: your cleaned/tuned voice;
@@ -89,13 +89,46 @@ The UI no longer offers presets. The preset engine (`engine.process`, `/api/jobs
 
 **Download** = `POST /api/takes/{id}/mix` with the rack settings. The server runs `fixer.render(s0, s1, duck, s)` and writes the true-peak -12 LUFS master as `{id}_v{n}`; the newest export wins. It's skipped when the settings are unchanged.
 
-The **Mix** knob is plain dry/wet between the two stems. Both have the same tuning and no latency between them, so there's no comb filtering.
+The **Mix** knob is plain dry/wet between the two stems, and it starts at **40%** (`fixer.DEFAULTS`). Both have the same tuning and no latency between them, so there's no comb filtering.
 
 **Measured on Recording 154 with v2:**
 - Phantom score 68 → 98 (off/light), 92 (heavy), 82 (medium; mud and SNR sit right at Phantom's limits)
 - 2–5 kHz harsh spikes 6.4 → 3.5–4.1 dB (v1: 4.0)
 - new clicks +15 (off) to +49
 - full fix about 8 s (off) / about 35 s (auto-tune); a Mix-panel re-render takes about 9 s on 83 s, including the MP3 encode
+
+### Vocal styles (`fixer.STYLES`): Rap · Melodic rap · Singer / Pop
+These aren't presets: each style is one set of numbers that shapes the same studio chain. The user picks a style first, right after upload, in `StylePicker.jsx` (it animates the way that sound moves). The style also sets the auto-tune default: Rap off, Melodic Heavy, Pop Medium. `FixRequest.style` sends it to `plan()` (step labels/why), `polish()` (tone target, compression, saturation, exciter, de-ess, gate) and `settings()` (the rack's starting point). It's stored on the take, so **Back to our mix** returns to that style.
+
+| | Rap | Melodic rap | Singer / Pop |
+|---|---|---|---|
+| Sources (engineers' own accounts, Sound On Sound *Inside Track* unless noted) | Moneybagg Yo: "in your face and bone-dry", no "delay throws, reverb swells", dbx 160 "really crushes" + parallel 1176; 40 (Drake): Auto-Tune only to "centre the pitch" | Antares on Travis Scott: retune 0–5, quarter-note delay, long dark reverb; Future: flanger wobble; The Weeknd: detuned doubles, MicroShift, Decapitator | Nigro: "double compressing", reverb "is always the flavour"; Charlie Holmes: "hate harsh 3-4 kHz"; Dua Lipa: ducked reverb |
+| Compression | -27/-23 dB, 5:1 → 3:1, 60% parallel, peaks held 5.5 dB over RMS | -22/-20 dB, 4:1 → 3:1, 35% parallel | -22/-20 dB, 3:1 → 2.5:1, 25% parallel |
+| Gate (opens below loudest) | 17 dB, floor -40 (tight between bars) | 24 dB, floor -32 | 24 dB, floor -32 |
+| Space | room 6%, slap 8%, width 12%, no wobble | hall 55%, 1/4 echo 40% with 30% repeats, width 60%, wobble 45% | plate 42%, 1/8 echo 20%, width 45%, wobble 10% |
+
+**Mix rack additions:** **Repeats** (`feedback`, 0–0.7, clamped so an echo always dies away) and **Wobble** (`mod`, 0–1). Wobble deepens the doubler's LFO by `1 + 6·mod` and speeds it up by `1 + 2.5·mod` (`FX.mod_depth`/`mod_rate`). `mixEngine.js` drives both live.
+
+**Measured** on both real takes. Every row hits -12 LUFS with true peak ≤ -1.09 dBTP and tone within 1.8 dB of the style's target.
+
+| Take | Rap | Melodic | Pop |
+|---|---|---|---|
+| 154: score / reverb level (dB vs dry) / width (dB) | 68→98 / -27.7 / -28 | 68→98 / -11.5 / -12 | 68→98 / -15.1 / -15 |
+| 261: score | 67→88* | 67→100 | 67→100 |
+| crest, 154 / 261 (dB, lower = denser) | 13.2 / 12.5 | 13.6 / 12.5 | 14.3 / 12.9 |
+
+\* 261 is a sung melody, and rap leaves auto-tune off. Phantom reads the held notes' harmonics as a resonance: read as F# minor notes, the flag goes away.
+
+Two dead ends, kept here so nobody retries them:
+- **Compressing melodic/pop below -22 dB** lifted take 154's room noise (score 98 → 80).
+- **A final limiter after the tone EQ** cost 2–8 dB of tone accuracy for about 1 dB of crest.
+
+**Downloads that send anywhere:**
+- **WAV:** 16-bit / 44.1 kHz with TPDF dither (`engine.save_16`).
+- **MP3:** 320k CBR at 44.1 kHz, with ID3v2.3 + v1 tags and a title.
+- **File names:** `"<upload name> - <Style> mix.mp3"`. The header carries both `filename` and `filename*`.
+- **Share MP3:** the Web Share API with files, opening the phone or desktop share sheet (WhatsApp etc.).
+- **WhatsApp size limit:** WhatsApp caps audio at 16 MB, and a 16-bit stereo WAV runs about 10.6 MB a minute. Longer WAVs go as a Document, and the UI says so.
 
 Unit tests: `PYTHONPATH=. .venv/Scripts/python -m pytest tests/`.
 
@@ -166,7 +199,7 @@ Unit tests: `PYTHONPATH=. .venv/Scripts/python -m pytest tests/`.
 | GET | `/api/sounds` | `{sounds:[{id,role,name,blurb,from,chain[],skipped[],autotune}], parts:[…]}` |
 | POST | `/api/jobs` | form: `vocal` (file), `part`, `sound`, `key` (`auto` / `preset` / `"A minor"`), optional `beat` → `{id}` |
 | GET | `/api/jobs/{id}` | `status` (running/done/error), `stage`, `slot`, `elapsed`, `key`, `bpm`, `lufs_raw`, `lufs_out`, `peaks_before`, `peaks_after`, `mp3`, `wav`, `raw`, `seconds`, `analysis` (Phantom `full_diagnostic` of the raw take) or `analysis_error` |
-| GET | `/api/file/{name}` | download (`{id}.mp3`, `{id}.wav` 24-bit, `{id}_raw.mp3` = Before) |
+| GET | `/api/file/{name}` | download (`{id}.mp3`, `{id}.wav` 16-bit dithered; saved as "<upload name> - <Style> mix.ext", `{id}_raw.mp3` = Before) |
 
 Jobs live in memory (`JOBS` dict), so they disappear on restart. Files stay in `out/jobs/`.
 

@@ -57,6 +57,14 @@ def save(x, path):
     sf.write(path, x.T, SR, subtype="PCM_24")
 
 
+def save_16(x, path):
+    """The WAV people download and share: 16-bit / 44.1 kHz with TPDF dither, the CD format every phone, chat app
+    and DAW opens (24-bit is a third bigger, which pushes a 2-minute take past WhatsApp's 16 MB audio limit)."""
+    lsb = 1 / 32768
+    d = (np.random.default_rng(0).random(x.shape) - np.random.default_rng(1).random(x.shape)) * lsb
+    sf.write(path, np.clip(x + d, -1, 1 - lsb).T, SR, subtype="PCM_16")
+
+
 def lufs(x):
     return pyln.Meter(SR).integrated_loudness(x.T.astype(np.float64))
 

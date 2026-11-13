@@ -27,13 +27,13 @@ export async function createMixEngine(ctx, { raw, stems, duck, fx, settings }) {
 
   // ----- doubler: two LFO-wobbled delays, hard left / right -----
   const dblMerge = node(ChannelMergerNode, { numberOfInputs: 2 });
-  const lfos = fx.doubler.map(([base, depth, rate], ch) => {
+  const lfos = fx.doubler.map(([base, depth, rate], ch) => {                 // mod deepens + speeds the wobble
     const d = node(DelayNode, { maxDelayTime: 0.1, delayTime: base });
     const lfo = node(OscillatorNode, { frequency: rate });
     const amt = node(GainNode, { gain: depth });
     lfo.connect(amt).connect(d.delayTime); lfo.start();
     bright.connect(d).connect(dblMerge, 0, ch);
-    return lfo;
+    return { lfo, amt, depth, rate };
   });
   const widthGain = node(GainNode, { gain: 0 });
   dblMerge.connect(bq("highpass", fx.doubler_hp)).connect(bq("lowpass", fx.doubler_lp)).connect(widthGain).connect(st);
@@ -50,8 +50,9 @@ export async function createMixEngine(ctx, { raw, stems, duck, fx, settings }) {
   send.connect(split);
   const feedbackDelay = () => {                                              // y[n] = x[n-D] + fb*y[n-D]
     const d = node(DelayNode, { maxDelayTime: 2 });
-    const fb = node(GainNode, { gain: fx.delay_fb });
+    const fb = node(GainNode, { gain: settings.feedback });
     d.connect(fb).connect(d);
+    d.fb = fb;
     return d;
   };
   const echoL = feedbackDelay(), pre = node(DelayNode, { maxDelayTime: 1 }), echoR = feedbackDelay();
@@ -81,6 +82,10 @@ export async function createMixEngine(ctx, { raw, stems, duck, fx, settings }) {
     if (patch.reverb_style) conv.buffer = IR[s.reverb_style];
     const t = fx.delays[s.delay_style];
     set(echoL.delayTime, 2 * t); set(pre.delayTime, t); set(echoR.delayTime, 2 * t);
+    set(echoL.fb.gain, s.feedback); set(echoR.fb.gain, s.feedback);
+    for (const l of lfos) {
+      set(l.amt.gain, l.depth * (1 + fx.mod_depth * s.mod)); set(l.lfo.frequency, l.rate * (1 + fx.mod_rate * s.mod));
+    }
   };
   apply({});
 
@@ -118,6 +123,6 @@ export async function createMixEngine(ctx, { raw, stems, duck, fx, settings }) {
       set(after.gain, which === "after" ? 1 : 0);
       set(before.gain, which === "before" ? beforeGain : 0);
     },
-    dispose() { stopSources(); lfos.forEach((l) => l.stop()); analyser.disconnect(); },
+    dispose() { stopSources(); lfos.forEach((l) => l.lfo.stop()); analyser.disconnect(); },
   };
 }

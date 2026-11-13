@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import Orb from "./components/Orb.jsx";
-import DotWaves from "./components/DotWaves.jsx";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Autotune from "./components/Autotune.jsx";
 import Report from "./components/Report.jsx";
 import MixPanel from "./components/MixPanel.jsx";
+import StylePicker, { VOCAL_STYLES } from "./components/StylePicker.jsx";
 import { createMixEngine } from "./mixEngine.js";
 import { Dropzone, Pipeline, Waveform } from "./components/Parts.jsx";
+
+// three.js is ~80% of the JS and only draws the backdrop: load it after the page shows
+const Orb = lazy(() => import("./components/Orb.jsx"));
+const DotWaves = lazy(() => import("./components/DotWaves.jsx"));
 
 const STAGE_PALETTES = [
   ["#ff5a36", "#6d28d9"], ["#ffb347", "#be185d"], ["#22d3ee", "#4f46e5"],
@@ -16,6 +19,10 @@ const LIGHT_STAGE_PALETTES = [
   ["#3b8bf6", "#0b3a8c"], ["#7cc8ff", "#1d4ed8"], ["#38bdf8", "#1e3a8a"],
   ["#93c5fd", "#0e7490"], ["#60a5fa", "#312e81"], ["#5eead4", "#1e40af"], ["#a5d8ff", "#1e3a8a"],
 ];
+// Web Share with files (phones, Windows/macOS share sheets): send the MP3 straight to WhatsApp & co
+const CAN_SHARE = (() => {
+  try { return !!navigator.canShare?.({ files: [new File([""], "a.mp3", { type: "audio/mpeg" })] }); } catch { return false; }
+})();
 const fmt = (s) => (isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00");
 
 const THEME_KEY = "vp-theme";
@@ -68,6 +75,11 @@ export default function App() {
   const [keyLoading, setKeyLoading] = useState(false);
   const [keyError, setKeyError] = useState("");
   const [chosenKey, setChosenKey] = useState(null);
+  const [style, setStyle] = useState(null);     // rap / melodic / pop: kept across takes
+  const pickStyle = (id) => {                   // each sound comes with its usual auto-tune
+    const at = VOCAL_STYLES.find((s) => s.id === id).autotune;
+    setStyle(id); setTune(at !== "off"); setLevel(at === "off" ? "light" : at);
+  };
   const takeNo = useRef(0);                    // bumps per new take so stale polls stop
 
   const poll = async (id, until) => {
@@ -130,7 +142,7 @@ export default function App() {
     try {
       const r = await fetch(`/api/takes/${job.id}/fix`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ autotune: tune ? level : "off", key: tune ? chosenKey : null }),
+        body: JSON.stringify({ autotune: tune ? level : "off", key: tune ? chosenKey : null, style }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "Couldn't start the fix");
@@ -202,7 +214,7 @@ export default function App() {
   const resetMix = () => { setMixS(defaults); engine.current?.set(defaults); };
 
   // Download = export exactly what you hear: the server renders the rack settings (unchanged = instant).
-  const download = async (kind) => {
+  const exported = async (kind) => {
     setMixError("");
     const same = JSON.stringify(mixS) === JSON.stringify(job.settings);
     let j = job;
@@ -216,11 +228,28 @@ export default function App() {
         if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "Couldn't export the mix");
         j = await poll(job.id, ["done"]);
         if (j?.mix_error) throw new Error(j.mix_error);
-      } catch (e) { setMixError(explain(e)); setExporting(""); return; }
+      } catch (e) { setMixError(explain(e)); setExporting(""); return null; }
       setExporting("");
     }
+    return j;
+  };
+  const download = async (kind) => {
+    const j = await exported(kind);
+    if (!j) return;
     const a = document.createElement("a");
-    a.href = j[kind]; a.download = ""; document.body.appendChild(a); a.click(); a.remove();
+    a.href = j[kind]; a.download = j.names?.[kind] ?? ""; document.body.appendChild(a); a.click(); a.remove();
+  };
+  const share = async () => {
+    const j = await exported("share");
+    if (!j) return;
+    try {
+      const blob = await (await fetch(j.mp3)).blob();
+      await navigator.share({ files: [new File([blob], j.names.mp3, { type: "audio/mpeg" })], title: j.names.mp3.slice(0, -4) });
+    } catch (e) {
+      // a long export uses up the click's permission to share: the file is ready now, so a second tap works
+      if (e.name === "NotAllowedError") setMixError("Your mix is ready. Tap Share again to send it.");
+      else if (e.name !== "AbortError") setMixError("Couldn't open sharing here. Download the MP3 and send that instead.");
+    }
   };
 
   const getAnalyser = useCallback(() => (playing ? engine.current?.analyser ?? null : null), [playing]);
@@ -233,8 +262,10 @@ export default function App() {
 
   return (
     <>
-      <DotWaves light={theme === "light"} />
-      <Orb getAnalyser={getAnalyser} busy={busy ? 1 : 0} palette={palette} light={theme === "light"} />
+      <Suspense fallback={null}>
+        <DotWaves light={theme === "light"} />
+        <Orb getAnalyser={getAnalyser} busy={busy ? 1 : 0} palette={palette} light={theme === "light"} />
+      </Suspense>
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,transparent_0%,color-mix(in_srgb,var(--bg)_35%,transparent)_85%)]" />
 
       <main className="mx-auto flex min-h-full w-full max-w-md flex-col px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-10 lg:max-w-6xl lg:px-10">
@@ -276,6 +307,7 @@ export default function App() {
             </div>
             <Dropzone label="Drop your vocal here" hint="Dry take: mp3, wav, m4a, WhatsApp voice note or video"
               file={vocal} onFile={onVocal} scanning={job?.status === "analysing"} />
+            {job && <StylePicker value={style} onChange={pickStyle} />}
             {job?.status === "analysing" && (
               <p className="chip-in px-1 text-sm text-mist">Listening to your take like an engineer would: noise, hum, harsh spots, loudness and more.</p>
             )}
@@ -291,10 +323,10 @@ export default function App() {
                 keyLoading={keyLoading} keyError={keyError} chosenKey={chosenKey} onKey={setChosenKey}
                 beat={beat} onBeat={(f) => { setBeat(f); if (f) detectKey(job.id, f); }} />
             </>)}
-            <button disabled={job?.status !== "analysed" || (tune && (keyLoading || !chosenKey))} onClick={fix}
+            <button disabled={job?.status !== "analysed" || !style || (tune && (keyLoading || !chosenKey))} onClick={fix}
               className="btn-glow btn-sheen mt-3 w-full rounded-2xl bg-gradient-to-b from-[var(--ember-hi)] to-ember py-4 text-lg font-bold tracking-tight text-white transition duration-200 hover:brightness-110 disabled:opacity-40 disabled:shadow-none"
               style={{ fontStretch: "108%" }}>
-              {!job ? "Drop a vocal to start" : job.status === "analysing" ? "Analysing…" : tune && keyLoading ? "Finding the key…" : "Fix my vocal"}
+              {!job ? "Drop a vocal to start" : job.status === "analysing" ? "Analysing…" : !style ? "Pick your sound" : tune && keyLoading ? "Finding the key…" : "Fix my vocal"}
             </button>
             {err && <p className="text-sm text-ember">{err}</p>}
           </div>
@@ -307,7 +339,7 @@ export default function App() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-lg font-semibold">Your vocal is fixed</div>
-                <div className="text-sm text-mist">{job.autotune && job.autotune !== "off" ? `Auto-tune ${job.autotune}` : "No auto-tune"}, done in {job.seconds}s</div>
+                <div className="text-sm text-mist">{job.style_label ? `${job.style_label} · ` : ""}{job.autotune && job.autotune !== "off" ? `Auto-tune ${job.autotune}` : "No auto-tune"}, done in {job.seconds}s</div>
               </div>
               <div className="flex gap-1">
                 <button onClick={() => setJob((j) => ({ ...j, status: "analysed" }))} className="rounded-xl px-3 py-1.5 text-sm text-mist hover:bg-fg/10 hover:text-fg">Tweak</button>
@@ -363,8 +395,20 @@ export default function App() {
                 {exporting === "mp3" ? "Exporting…" : "Download MP3"}</button>
               <button onClick={() => download("wav")} disabled={!!exporting}
                 className="rounded-2xl border border-fg/15 py-3 text-center font-semibold transition hover:bg-fg/5 active:scale-[.98] disabled:opacity-60">
-                {exporting === "wav" ? "Exporting…" : "WAV 24-bit"}</button>
+                {exporting === "wav" ? "Exporting…" : "WAV 16-bit"}</button>
             </div>
+            {CAN_SHARE && (
+              <button onClick={share} disabled={!!exporting}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-fg/15 py-3 font-semibold transition hover:bg-fg/5 active:scale-[.98] disabled:opacity-60">
+                <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" />
+                </svg>
+                {exporting === "share" ? "Exporting…" : "Share MP3"}
+              </button>
+            )}
+            <p className="mt-2 px-1 text-xs leading-relaxed text-mist">
+              Sending on WhatsApp? The MP3 goes as audio. WhatsApp caps audio at 16 MB, so send a long WAV as a Document.
+            </p>
 
           </div>
         )}
@@ -382,11 +426,6 @@ export default function App() {
   );
 }
 
-const Label = ({ children, on }) => (
-  <div className="flex items-center gap-2 px-1 pt-2 text-sm font-medium text-mist">
-    <span className="led" data-on={!!on} style={{ width: 5, height: 5 }} />{children}
-  </div>
-);
 const Chip = ({ label, value }) => (
   <span className="rounded-full bg-fg/[.06] px-2.5 py-1 text-xs">
     <span className="text-mist">{label} </span><span className="font-medium">{value}</span>

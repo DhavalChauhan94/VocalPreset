@@ -128,3 +128,25 @@ def test_effects_duck_under_the_voice():
     g = fixer._duck(voice)
     assert g[int(SR * 1.5)] < 0.5                    # reverb/echo turned down ~6+ dB while the voice plays
     assert g[int(SR * 3.0)] > 0.95                   # and fully back once it stops, so tails bloom
+
+
+def test_styles_have_their_own_space():
+    rap, mel, pop = (fixer.settings(style=s) for s in ("rap", "melodic", "pop"))
+    assert rap["reverb"] < pop["reverb"] < mel["reverb"] and rap["width"] < pop["width"] < mel["width"]   # dry -> wet
+    assert mel["mod"] > pop["mod"] > rap["mod"] and mel["delay_style"] == "quarter"
+    assert fixer.settings({"feedback": 5}, "rap")["feedback"] == 0.7                  # never a runaway echo
+    assert fixer.settings({"mix": 0.3}, "rap")["reverb"] == rap["reverb"]              # tweaks keep the style's defaults
+    assert fixer.settings(style="nope") == fixer.DEFAULTS
+
+
+def test_plan_speaks_the_style():
+    for style, conf in fixer.STYLES.items():
+        steps = {s["id"]: s for s in fixer.plan(None, style=style)}
+        assert steps["dynamics"]["label"] == f"{conf['label']} dynamics" and steps["space"]["why"] == conf["why"]["space"]
+
+
+def test_wobble_moves_the_double():
+    t = np.arange(SR * 2) / SR
+    y = (0.3 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    still, moving = fixer.doubler(y, 1.0, 0.0), fixer.doubler(y, 1.0, 1.0)
+    assert np.abs(still - moving).max() > 0.01

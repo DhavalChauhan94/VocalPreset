@@ -6,7 +6,9 @@ const KNOBS = [
   { id: "mix", label: "Mix", format: pct, hint: "How much of our studio sound you hear" },
   { id: "reverb", label: "Reverb", format: pct, hint: "The room around your voice" },
   { id: "delay", label: "Echo", format: pct, hint: "Repeats, left and right" },
+  { id: "feedback", label: "Repeats", format: (v) => pct(v / 0.7), max: 0.7, hint: "How long the echo keeps repeating" },
   { id: "width", label: "Width", format: pct, hint: "A double that sounds bigger" },
+  { id: "mod", label: "Wobble", format: pct, hint: "Chorus-style movement on the double (needs some Width)" },
   { id: "brightness", label: "Brightness", format: signed, min: -1, hint: "Darker or crisper" },
   { id: "warmth", label: "Warmth", format: signed, min: -1, hint: "Thinner or fuller" },
 ];
@@ -30,10 +32,10 @@ export default function MixPanel({ settings, defaults, ready, onChange, onReset 
         </span>
       </div>
 
-      <div className={`mt-4 grid grid-cols-3 gap-x-2 gap-y-4 transition ${ready ? "" : "pointer-events-none opacity-40"}`}>
+      <div className={`mt-4 grid grid-cols-4 gap-x-1 gap-y-4 transition ${ready ? "" : "pointer-events-none opacity-40"}`}>
         {KNOBS.map((k) => (
           <div key={k.id} className="flex flex-col items-center" title={k.hint}>
-            <Knob label={k.label} value={settings[k.id]} min={k.min ?? 0} max={1} def={defaults?.[k.id] ?? 0}
+            <Knob label={k.label} value={settings[k.id]} min={k.min ?? 0} max={k.max ?? 1} def={defaults?.[k.id] ?? 0}
               format={k.format} onChange={(v) => onChange({ [k.id]: v })} />
           </div>
         ))}

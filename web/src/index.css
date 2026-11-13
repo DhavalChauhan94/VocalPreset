@@ -142,9 +142,31 @@ input[type=range] { accent-color: var(--color-ember); }
 
 :focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
 
+/* vocal sound picker: each card moves the way that vocal sounds, only on hover or once picked */
+.sp[aria-checked="true"] {
+  border-color: color-mix(in srgb, var(--ember) 70%, transparent);
+  background: color-mix(in srgb, var(--ember) 10%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ember) 45%, transparent), 0 10px 28px -14px var(--ember);
+}
+.sp svg { stroke: color-mix(in srgb, var(--fg) 38%, transparent); fill: color-mix(in srgb, var(--fg) 30%, transparent); transition: stroke .3s, fill .3s; }
+.sp:hover svg, .sp[aria-checked="true"] svg { stroke: var(--ember); fill: var(--ember); }
+.sp path { fill: none; }
+.sp-bar { transform-box: fill-box; transform-origin: 50% 100%; transform: scaleY(calc(var(--h) * .5)); stroke: none; }
+.sp-wave { animation: sp-slide 3s linear infinite paused; }
+.sp-wobble { transform-box: fill-box; animation: sp-wobble 1.3s ease-in-out infinite paused; }
+.sp-spark { stroke: none; opacity: .25; transform-box: fill-box; transform-origin: center; }
+.sp:hover .sp-bar, .sp[aria-checked="true"] .sp-bar { animation: sp-punch .75s cubic-bezier(.2,.9,.3,1) infinite; animation-delay: calc(var(--i) * 16ms); }
+.sp:hover :is(.sp-wave, .sp-wobble), .sp[aria-checked="true"] :is(.sp-wave, .sp-wobble) { animation-play-state: running; }
+.sp:hover .sp-spark, .sp[aria-checked="true"] .sp-spark { animation: sp-twinkle 1.8s ease-in-out infinite; animation-delay: calc(var(--i) * 420ms); }
+@keyframes sp-punch { 0% { transform: scaleY(calc(var(--h) * .3)) } 7% { transform: scaleY(var(--h)) } 42%, 100% { transform: scaleY(calc(var(--h) * .38)) } }
+@keyframes sp-slide { to { transform: translateX(-50px) } }
+@keyframes sp-wobble { 50% { transform: translateY(1.6px) skewX(-4deg) } }
+@keyframes sp-twinkle { 0%, 100% { opacity: .15; transform: scale(.6) } 45% { opacity: 1; transform: scale(1.25) } }
+
 @media (prefers-reduced-motion: reduce) {
   .chrome, .chrome:hover, .led[data-on="true"], .meter i, .chip-in, .rise, .tune-path { animation: none !important; }
   .tune-path, .piano-key { transition: none !important; }
+  .sp-bar, .sp-wave, .sp-wobble, .sp-spark { animation: none !important; }
   .btn-sheen::after { display: none; }
 }
 
