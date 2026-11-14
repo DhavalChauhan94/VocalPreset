@@ -27,6 +27,29 @@ if ($LASTEXITCODE -ne 0) { Write-Host 'Python 3.11+ needed: delete .venv and ins
 & $py -m pip install -q --disable-pip-version-check -r requirements.txt
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
+# Pro processors (pro.py): Airwindows Consolidated VST3, a pinned build checked against its published SHA-256.
+# Without it the fix still runs, on the built-in processors.
+if (-not (Test-Path 'plugins\Airwindows Consolidated.vst3')) {
+  $zip = Join-Path $env:TEMP 'airwindows-consolidated.zip'; $tmp = Join-Path $env:TEMP 'airwindows-consolidated'
+  try {
+    Write-Host 'Installing Airwindows Consolidated (13 MB, first start only)...'
+    Invoke-WebRequest -UseBasicParsing -OutFile $zip 'https://github.com/baconpaul/airwin2rack/releases/download/DAWPlugin/AirwindowsConsolidated-2026-11-08-316a048-Windows.zip'
+    if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne 'ECE84AFF193B1D436FD46AD6C3047D276DC43DDF048E63684BD012B5DAEDD4A0') { throw 'checksum mismatch' }
+    Expand-Archive $zip -DestinationPath $tmp -Force
+    New-Item -ItemType Directory -Force plugins | Out-Null
+    Move-Item (Join-Path $tmp 'Airwindows Consolidated.vst3') plugins
+  } catch {
+    Write-Host "Airwindows not installed ($_). Get the Windows zip from github.com/baconpaul/airwin2rack/releases and put 'Airwindows Consolidated.vst3' in plugins\"
+  } finally { Remove-Item $zip, $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# AI restoration models (restore.py, ~1.8 GB, first start only). Without them takes skip restoration.
+if (-not (Test-Path 'models\dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt')) {
+  Write-Host 'Downloading the AI restoration models (~1.8 GB, first start only)...'
+  & $py restore.py --download
+  if ($LASTEXITCODE -ne 0) { Write-Host 'Model download failed: takes will skip AI restoration until the next start.' }
+}
+
 Push-Location web
 try {
   # `npm ci` installs exactly what package-lock.json says and never rewrites it.

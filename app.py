@@ -26,6 +26,7 @@ import analysis
 import engine
 import fixer
 import keys
+import restore
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "out", "jobs")          # generated mp3/wav, served by /api/file
@@ -199,6 +200,24 @@ def _analyse_take(tid):
     except Exception as e:      # undecodable upload; the raw error holds server paths, so log it, don't send it
         print(f"take {tid}: {e}")
         t.update(status="error", error="We couldn't read this file as audio. Try an mp3, wav, m4a or a voice note.")
+    if tid in RESTORING:        # after the analysis, not alongside: together they pushed Phantom past its 60 s timeout
+        _restore_take(tid)
+
+
+RESTORING: dict[str, threading.Event] = {}   # take id -> set once its AI restoration finished (or failed)
+
+
+def _restore_take(tid):
+    """Runs right after the upload's analysis, so it's usually done by the time the user has picked a sound and pressed Fix."""
+    t = JOBS[tid]
+    out = os.path.join(TAKES, f"{tid}_restored.wav")
+    try:
+        restore.restore(t["input"], out)
+        t["restored"] = out
+    except Exception as e:      # the fix still runs, on the original take
+        print(f"restore {tid}: {e}")
+    finally:
+        RESTORING[tid].set()
 
 
 def _fix_take(tid, autotune, key, style):
@@ -211,13 +230,16 @@ def _fix_take(tid, autotune, key, style):
             t.update({k: v for k, v in kw.items() if v is not None})
 
     try:
-        steps = fixer.plan(t.get("analysis"), autotune, key, style)
+        steps = fixer.plan(t.get("analysis"), autotune, key, style, restore=tid in RESTORING)
         t.update(steps=steps, chain=[s["label"] for s in steps], slot=0)
+        if tid in RESTORING and not RESTORING[tid].is_set():
+            t.update(stage="Restoring your recording (AI)")
+            RESTORING[tid].wait()
         wav = os.path.join(OUT, f"{tid}.wav")
         dry = os.path.join(TAKES, f"{tid}_dry.wav")      # no reverb: Phantom hears reverb tails as noise
         t.update(settings=fixer.settings(style=style), mix_version=0)  # each "Fix" starts from the style's one-click mix
         stems = [os.path.join(OUT, f"{tid}_s{i}.flac") for i in (0, 1)]   # for the live Mix rack in the browser
-        duck = fixer.fix(t["input"], wav, steps, progress, dry_path=dry, stem_paths=stems, style=style)
+        duck = fixer.fix(t.get("restored", t["input"]), wav, steps, progress, dry_path=dry, stem_paths=stems, style=style)
         t.update(stems=[f"/api/file/{tid}_s{i}.flac?t={int(time.time())}" for i in (0, 1)],
                  duck=np.round(duck, 4).tolist(), fx=fixer.FX)
         t.update(stage="Checking the result", slot=len(steps))
@@ -265,19 +287,12 @@ def _mix_take(tid, version, s):
             t.update(status="done", stage="Done", mix_error="Couldn't export that mix. Try again.")
 
 
-IR_DIR = os.path.join(HERE, "out", "ir")
-os.makedirs(IR_DIR, exist_ok=True)
-
-
 @app.get("/api/ir/{style}.wav")
 def reverb_ir(style: str):
     """Reverb impulse responses for the browser's ConvolverNode: the same ones the server renders with."""
     if style not in fixer.REVERB_STYLES:
         raise HTTPException(404)
-    path = os.path.join(IR_DIR, f"{style}.wav")
-    if not os.path.exists(path):
-        fixer.write_ir(style, path)
-    return FileResponse(path, media_type="audio/wav")
+    return FileResponse(os.path.join(fixer.IR_DIR, f"{style}.wav"), media_type="audio/wav")
 
 
 @app.post("/api/takes")
@@ -290,6 +305,8 @@ async def create_take(vocal: UploadFile = File(...)):
     os.replace(path, final)
     JOBS[tid] = {"id": tid, "input": final, "title": _title(vocal.filename), "status": "analysing", "stage": "Listening to your take",
                  "slot": None, "t0": time.time()}
+    if restore.available():
+        RESTORING[tid] = threading.Event()
     threading.Thread(target=_analyse_take, args=(tid,), daemon=True).start()
     return {"id": tid}
 
@@ -369,7 +386,7 @@ def job(job_id: str):
     j = dict(JOBS[job_id])
     j["elapsed"] = round(time.time() - j.pop("t_fix", j.pop("t0")), 1)
     j.pop("t0", None)
-    for k in ("input", "beat"):   # server paths, not for the client
+    for k in ("input", "beat", "restored"):   # server paths, not for the client
         j.pop(k, None)
     if "style" in j:
         j["names"] = {ext: _download_name(j, ext) for ext in ("mp3", "wav")}

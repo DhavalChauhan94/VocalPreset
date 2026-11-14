@@ -36,6 +36,7 @@ You need Python 3.11+, Node.js 20+ and ffmpeg. Phantom analysis and the key-serv
 ## Docs
 | File | What's in it |
 |---|---|
+| [SYSTEM-BRIEF.md](SYSTEM-BRIEF.md) | The whole system on one page, with diagrams: give it to Claude Code first |
 | [CHANGELOG.md](CHANGELOG.md) | What changed, day by day |
 | [HANDOVER.md](HANDOVER.md) | Current state, measured results, known issues, next steps |
 | [SETUP.md](SETUP.md) | Install, run, Phantom and key-service setup, troubleshooting |

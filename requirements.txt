@@ -10,3 +10,5 @@ uvicorn==0.54.0
 python-multipart==0.0.33
 mcp==2.3.0                # client for the Phantom analysis server (analysis.py)
 pyworld==0.3.5            # WORLD vocoder for auto-tune (tune.py), MIT
+audio-separator[cpu]==0.48.0  # AI restoration (restore.py): Roformer de-noise/de-reverb, pulls torch. NVIDIA GPU: see SETUP.md
+audioread==3.1.0                # audio-separator imports it but doesn't declare it

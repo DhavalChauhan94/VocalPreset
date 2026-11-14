@@ -80,6 +80,28 @@ curl localhost:8001/health      # {"status":"ok"}
 ```
 `start.bat` keeps a WSL session open while the site runs, so the container stays up. Details and tests: `key-service/README.md`.
 
+## Sound engine extras (installed by the start scripts)
+The winning sound from the blind A/B (2026-11-13) needs two downloads. Both are optional: without them the site still
+runs, just without that part.
+| What | Where | Without it |
+|---|---|---|
+| **AI restoration models** (Roformer de-noise + de-reverb, ~1.8 GB) | `models/`, fetched by `python restore.py --download` | takes skip restoration |
+| **Airwindows Consolidated** VST3 (Air3, DeBess, Channel9) | `plugins/`, a pinned, SHA-256-checked download (Windows, Linux) | built-in exciter / de-esser / saturation |
+
+On macOS, install the `.dmg` from [airwin2rack releases](https://github.com/baconpaul/airwin2rack/releases) and copy
+`Airwindows Consolidated.vst3` into `plugins/`.
+The reverbs are Dragonfly's, captured as impulse responses in `ir/` (in git), so no reverb plugin is needed.
+To change them: install [Dragonfly Reverb](https://michaelwillis.github.io/dragonfly-reverb/) and run
+`python tools/capture_irs.py "<folder with the Dragonfly .vst3 files>"`.
+
+**NVIDIA GPU (strongly recommended for restoration):** `requirements.txt` installs CPU torch, where restoration takes
+about 7x the take's length. With an NVIDIA card, swap in the CUDA build once:
+```powershell
+.venv\Scripts\python -m pip install --no-cache-dir "torch==2.14.1+cu130" --index-url https://download.pytorch.org/whl/cu130
+```
+Restoration then runs on the GPU automatically (check: `python -c "import torch; print(torch.cuda.is_available())"`).
+Restoration starts the moment a take is uploaded, one take at a time (two at once ran a 16 GB PC out of memory).
+
 ## Troubleshooting
 | Symptom | Fix |
 |---|---|

@@ -54,20 +54,22 @@ The UI no longer offers presets. The preset engine (`engine.process`, `/api/jobs
 
 | Stage | Step | What it does |
 |---|---|---|
+| RESTORE (`restore.py`, from upload, optional) | restore | AI: MelBand-Roformer de-noise (aufr33) → de-reverb (anvuew) via audio-separator: a booth-like dry take |
 | PREP (full strength; cached as `out/takes/{id}_prep.npy`) | clean | 24 dB/oct 75 Hz HPF + stationary spectral denoise → -18 LUFS |
 | | hum | scipy notches at the hum frequency and its 2×/3×/4× (only when Phantom's salience ≥ 0.1) |
 | | eq | measured resonance cuts (before auto-tune: tuned harmonics look like resonances) |
 | | autotune | `tune.py` (WORLD below 5 kHz, voiced frames only) |
-| POLISH (every move scaled by **Mix**) | bright | EQ toward the target + gentle even-harmonic exciter (0.12, >7 kHz) |
+| POLISH (every move scaled by **Mix**) | bright | EQ toward the target + **Airwindows Air3** (air 0.58–0.62 by style) |
 | | dynamics | 4:1 (10 ms) → 3:1 (15 ms) + 35% parallel "New York" compression + look-ahead peak control |
-| | sibilance | dynamic cuts for 2.5–5 kHz (harshness) and 5.5–11 kHz (S/T), only when they stab out |
-| | tone | tape-style asymmetric saturation (warmth) → iterative EQ to the target → rumble HPF again |
+| | sibilance | dynamic cut for 2.5–5 kHz (harshness) + **Airwindows DeBess** (S/T) |
+| | tone | **Airwindows Channel9** console colour (drive 0.45–0.62 by style) → iterative EQ to the target → rumble HPF again |
 | | gate | gap expander (floor -32 dB) |
 | SPACE | doubler | 14/21 ms modulated copies, panned L/R |
-| | reverb | **convolution** with a synthetic stereo IR (per-band decay; Room/Plate/Hall) |
+| | reverb | **convolution** with **Dragonfly Reverb**'s Room/Plate/Hall, captured as IRs (`ir/`, `tools/capture_irs.py`) |
 | | delay | ping-pong delay |
 | | master | -12 LUFS, ≤ -1.2 dBTP (4×-oversampled peaks into `engine.brickwall`) |
 
+- **Pro processors (`pro.py`):** Airwindows Consolidated (VST3) through `pedalboard.load_plugin`; the effect is picked by rewriting the plugin's JUCE state. Without the plugin the old built-ins run instead (exciter, `dyn_band` de-esser, tanh saturation).
 - **Ducking:** reverb and delay both duck about 6 dB while the voice plays and bloom in the gaps.
 - **TARGET v2** (dB vs 1 kHz, loud frames, marked **check**): `[-4, -5.5, -5, 0, -4, -9, -14, -19]` across 113 Hz–12.8 kHz. That's warm body and a top end 4–5 dB below v1.
 - **Brightness/Warmth** are shelves after the chain (`tone_knobs`: +-6 dB at 8 kHz, +-3 dB at 200 Hz), the same biquads in the browser.

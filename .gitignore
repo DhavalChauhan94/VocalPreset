@@ -8,6 +8,10 @@ web/dist/
 # generated audio (renders, uploads, jobs)
 out/
 
+# downloaded by start.ps1 / start.sh: pro plugins (pro.py) and AI restoration models (restore.py)
+plugins/
+models/
+
 # private audio: never commit someone's raw vocal
 samples/*.mpeg
 samples/*.mp3

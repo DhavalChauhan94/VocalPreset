@@ -6,13 +6,18 @@ score() 0-100 "studio readiness" from a Phantom report.
 
 Chain order (dynamics before the final tone match, since compressors reshape the balance):
 PREP (always full, cached per take): clean (HPF + spectral denoise) -> hum notches -> resonance cuts -> auto-tune.
-POLISH (scaled by the Mix amount): rough tone + gentle exciter -> serial + parallel compression + peak control
--> dynamic harshness/de-ess -> tape saturation + final tone match -> gap expander.
-SPACE: doubler + ducked convolution reverb + ducked ping-pong delay -> true-peak master.
+Before it all (restore.py, optional): AI de-noise + de-reverb of the raw take.
+POLISH (scaled by the Mix amount): rough tone + Airwindows Air3 -> serial + parallel compression + peak control
+-> dynamic harshness + Airwindows DeBess -> Airwindows Channel9 console + final tone match -> gap expander
+(pro.py; our own exciter / de-esser / saturation when the plugin isn't installed).
+SPACE: doubler + ducked convolution reverb (Dragonfly's captured IRs, ir/) + ducked ping-pong delay -> true-peak master.
 Tuned on a real 83 s laptop-mic take: score 61 -> 84, 7 kHz -28.7 -> -8.8 dB vs 1 kHz, gaps
 -48 -> -69 dBFS, -12 LUFS at -1.2 dBTP. TARGET is a first reference curve ("check"): confirm it
 against real studio vocals with match.py before treating it as final.
 """
+import functools
+import os
+
 import numpy as np
 import librosa
 from pedalboard import Compressor, Delay, HighShelfFilter, LowShelfFilter, PeakFilter, Pedalboard
@@ -20,6 +25,7 @@ from scipy.ndimage import uniform_filter, uniform_filter1d
 from scipy.signal import butter, fftconvolve, iirnotch, resample_poly, sosfilt, sosfiltfilt, tf2sos
 
 import engine
+import pro
 import tune
 
 SR = engine.SR
@@ -58,11 +64,13 @@ def _step(id_, label, why, fixes=(), **params):
     return {"id": id_, "label": label, "why": why, "fixes": list(fixes), "params": params}
 
 
-def plan(report, autotune="off", key=None, style="pop"):   # "pop" = DEFAULT_STYLE (defined below)
+def plan(report, autotune="off", key=None, style="pop", restore=False):   # "pop" = DEFAULT_STYLE (below)
     pr = _problems(report)
     why = STYLES[style]["why"]
     noisy = "noise_floor" in pr or "snr" in pr
-    s = [_step("clean", "Clean up the recording",
+    s = [_step("restore", "Studio restoration (AI)",
+               "AI removes room echo and background noise, like re-recording you in a vocal booth.")] if restore else []
+    s += [_step("clean", "Clean up the recording",
                "Cuts rumble and removes the steady background hiss under your voice." if noisy
                else "Cuts rumble below the voice and sets a healthy working level.",
                ("dc_offset", "noise_floor", "snr"), denoise_db=20.0 if noisy else 10.0)]
@@ -91,13 +99,13 @@ def plan(report, autotune="off", key=None, style="pop"):   # "pop" = DEFAULT_STY
     s.append(_step("sibilance", "Tame harshness and S sounds",
                    "Harsh upper-mids and sharp 'S'/'T' sounds are turned down only at the moments they stab out.",
                    ("sibilance", "harshness")))
-    s.append(_step("tone", f"{STYLES[style]['label']} tone", "Tape-style saturation, then " + why["tone"][0].lower() + why["tone"][1:],
+    s.append(_step("tone", f"{STYLES[style]['label']} tone", "Analog-style console colour, then " + why["tone"][0].lower() + why["tone"][1:],
                    ("mud",)))
     s.append(_step("gate", "Silence the gaps", "Turns down background noise between phrases.", ("noise_floor", "snr")))
     if "clipping" in pr or "lossy_codec" in pr:
         s.append(_step("note", "Damage we can't fully undo",
-                       "Distorted (clipped) or heavily compressed audio has lost detail for good. "
-                       "We'll smooth it, but re-recording gives the best result.", ("clipping", "lossy_codec")))
+                       "Distorted (clipped) or heavily compressed audio has lost some detail; "
+                       "we smooth it over as far as it goes.", ("clipping", "lossy_codec")))
     s.append(_step("space", f"{STYLES[style]['label']} space", why["space"]))
     s.append(_step("master", "Loud and streaming-safe",
                    f"Masters to {TARGET_LUFS:.0f} LUFS with true peaks under {CEILING_DBTP} dB: loud, and never crackles.",
@@ -111,8 +119,9 @@ def plan(report, autotune="off", key=None, style="pop"):   # "pop" = DEFAULT_STY
 # mix 0.4: the blend people liked on first listen (the user's call, 2026-11-11); the rack goes up to 100%
 DEFAULTS = {"mix": 0.4, "reverb": 0.35, "reverb_style": "plate", "delay": 0.2, "delay_style": "eighth",
             "feedback": 0.25, "width": 0.45, "mod": 0.1, "brightness": 0.0, "warmth": 0.0}
-# RT60 s, pre-delay s, how fast the highs die vs RT (lower = darker): a bright pop plate, a dark melodic hall
-REVERB_STYLES = {"room": (0.7, 0.008, 0.6), "plate": (1.8, 0.025, 0.7), "hall": (2.6, 0.035, 0.42)}
+# Dragonfly Reverb's Room / Plate / Hall, captured as impulse responses (tools/capture_irs.py)
+IR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ir")
+REVERB_STYLES = ("room", "plate", "hall")
 
 # Three vocal styles, from engineers' own accounts (Sound On Sound "Inside Track" unless noted):
 # rap     Moneybagg Yo's engineer: "in your face and bone-dry", hates "delay throws, reverb swells"; a dbx 160 that
@@ -129,7 +138,7 @@ STYLES = {
             "target": [-6.0, -6.5, -4.5, 0.0, -2.5, -8.0, -13.5, -18.5],
             "polish": {"thr1": -27.0, "ratio1": 5.0, "thr2": -23.0, "ratio2": 3.0, "parallel": 0.6, "peak": 5.5,
                        "gate": -40.0, "gate_below": 17.0,
-                       "saturation": 0.32, "exciter": 0.10, "harsh": 4.0, "deess": 9.0},
+                       "air": 0.58, "drive": 0.62, "saturation": 0.32, "exciter": 0.10, "harsh": 4.0, "deess": 9.0},
             "settings": {"reverb": 0.06, "reverb_style": "room", "delay": 0.08, "delay_style": "slap",
                          "feedback": 0.05, "width": 0.12, "mod": 0.0},
             "why": {"dynamics": "Crushed like a rap record: hard compression plus a heavy parallel blend, so every bar hits.",
@@ -138,7 +147,7 @@ STYLES = {
     "melodic": {"label": "Melodic rap", "file": "Melodic", "autotune": "heavy",
                 "target": [-4.0, -5.0, -5.0, 0.0, -4.0, -9.5, -14.0, -18.5],
                 "polish": {"thr1": -22.0, "ratio1": 4.0, "thr2": -20.0, "ratio2": 3.0, "parallel": 0.35, "peak": 8.0, "gate": -32.0, "gate_below": 24.0,
-                           "saturation": 0.3, "exciter": 0.12, "harsh": 4.5, "deess": 9.0},
+                           "air": 0.60, "drive": 0.55, "saturation": 0.3, "exciter": 0.12, "harsh": 4.5, "deess": 9.0},
                 "settings": {"reverb": 0.55, "reverb_style": "hall", "delay": 0.4, "delay_style": "quarter",
                              "feedback": 0.3, "width": 0.6, "mod": 0.45},
                 "why": {"dynamics": "Heavy, smooth compression with tape grit after the tuning, the wavy trap sound.",
@@ -147,7 +156,7 @@ STYLES = {
     "pop": {"label": "Singer / Pop", "file": "Pop", "autotune": "medium",
             "target": [-5.0, -6.0, -5.0, 0.0, -3.5, -8.5, -12.5, -16.5],
             "polish": {"thr1": -22.0, "ratio1": 3.0, "thr2": -20.0, "ratio2": 2.5, "parallel": 0.25, "peak": 8.0, "gate": -32.0, "gate_below": 24.0,
-                       "saturation": 0.15, "exciter": 0.12, "harsh": 5.0, "deess": 10.0},
+                       "air": 0.62, "drive": 0.45, "saturation": 0.15, "exciter": 0.12, "harsh": 5.0, "deess": 10.0},
             "settings": {"reverb": 0.42, "reverb_style": "plate", "delay": 0.2, "delay_style": "eighth",
                          "feedback": 0.22, "width": 0.45, "mod": 0.1},
             "why": {"dynamics": "Two gentle compressors in a row: polished and even, never squashed.",
@@ -306,28 +315,10 @@ def gap_gate(y, below_db=24.0, slope=3.0, floor_db=-24.0):
 
 # ---------- space: convolution reverb, ping-pong delay, doubler ----------
 
-_IR_CACHE = {}
-
-
+@functools.cache
 def reverb_ir(style):
-    """Synthetic stereo IR: decaying, decorrelated noise per band (highs die faster, like a real plate/hall),
-    soft onset, pre-delay. Smooth and dense, unlike a comb-filter (Freeverb) reverb."""
-    if style in _IR_CACHE:
-        return _IR_CACHE[style]
-    rt, pre, hi_k = REVERB_STYLES[style]
-    n = int(SR * rt * 1.3)
-    t = np.arange(n) / SR
-    rng = np.random.default_rng(7)
-    ir = np.zeros((2, n))
-    for lo, hi, k in ((60, 500, 1.15), (500, 4000, 1.0), (4000, 12000, hi_k)):  # band edges, RT multiplier
-        sos = butter(2, [lo, hi], "band", fs=SR, output="sos")
-        env = 10 ** (-3 * t / (rt * k))                                          # -60 dB at RT
-        ir += sosfilt(sos, rng.normal(size=(2, n)), axis=1) * env
-    ir *= np.minimum(1, t / 0.004)                                               # no click at the onset
-    ir /= np.sqrt((ir ** 2).sum(axis=1, keepdims=True))
-    ir = np.pad(ir, ((0, 0), (int(SR * pre), 0)))
-    _IR_CACHE[style] = ir.astype(np.float32)
-    return _IR_CACHE[style]
+    """Stereo IR (2, n) of a Dragonfly reverb; the browser's ConvolverNode plays the same file (/api/ir/)."""
+    return engine.sf.read(os.path.join(IR_DIR, f"{style}.wav"), dtype="float32")[0].T.copy()
 
 
 # Shared by the server render and the browser's live engine (sent to the UI as job["fx"]), so the
@@ -476,8 +467,9 @@ def _polish_step(y, sid, style):
     st = STYLES[style]
     p = st["polish"]
     tgt = np.array(st["target"])
-    if sid == "bright":
-        return exciter(eq_pass(y, 0.8, tgt), p["exciter"])
+    if sid == "bright":                       # Airwindows Air3 ("real air") won the blind A/B over our exciter
+        y = eq_pass(y, 0.8, tgt)
+        return pro.airwindows("Air3", y, air=p["air"], gnd=0.5) if pro.available() else exciter(y, p["exciter"])
     if sid == "dynamics":
         # thresholds vs a -18 LUFS voice: rap's -27 dB works the whole voice (the dbx 160 "really crushes");
         # -22 dB (melodic, pop) works the louder words. Deeper lifted take 154's room noise (score 98 -> 80).
@@ -489,9 +481,13 @@ def _polish_step(y, sid, style):
         return peak_control(dry + p["parallel"] * crush, p["peak"])
     if sid == "sibilance":
         y = dyn_band(y, 2500, 5000, 4.0, p["harsh"])     # harsh upper-mids, only when they stab
-        return dyn_band(y, 5500, 11000, 6.0, p["deess"])  # S / T
-    if sid == "tone":
-        return derumble(match_tone(saturate(y, p["saturation"]), tgt))   # again: the body boost lifts rumble too
+        if pro.available():                               # S / T (DeBess needs sense=0 on these takes)
+            return pro.airwindows("DeBess", y, intense=0.3, sharp=0.5, depth=0.5, filter=0.5, sense=0.0)
+        return dyn_band(y, 5500, 11000, 6.0, p["deess"])
+    if sid == "tone":                         # console colour, then the final tone match (it lifts rumble: derumble)
+        z = (pro.airwindows("Channel9", y, console_type=0.5, drive=p["drive"], output=0.5) if pro.available()
+             else saturate(y, p["saturation"]))
+        return derumble(match_tone(z, tgt))
     if sid == "gate":
         # compression lifts the gaps; rap's is lifted most, so its gate opens closer to the words (tight between bars)
         return gap_gate(y, below_db=p["gate_below"], floor_db=p["gate"])
@@ -540,10 +536,6 @@ def write_stem(path, mono):
 
 def read_stem(path):
     return engine.sf.read(path, dtype="float32")[0]
-
-
-def write_ir(style, path):
-    engine.sf.write(path, reverb_ir(style).T, SR, subtype="FLOAT")
 
 
 def score(report, before=None):

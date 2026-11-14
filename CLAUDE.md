@@ -5,6 +5,7 @@
 
 | Doc | Read it when… |
 |---|---|
+| [SYSTEM-BRIEF.md](SYSTEM-BRIEF.md) | **Start here:** the whole system on one page (flow, fix chain, files, rules, open items) |
 | [README.md](README.md) | You need the one-screen overview (GitHub front page) |
 | [SETUP.md](SETUP.md) | Installing, running, dev mode, ports, troubleshooting |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Touching the API, engine pipeline, auto-tune, frontend, A/B audio graph |
@@ -32,6 +33,9 @@ fst_reader.py   .fst → presets/<sound>.json   (FLhd/FLdt events; per-plugin bl
 engine.py       load → pre_clean → run_chain (FL plugins) → part tweaks → mix/master
 app.py          /api/takes (analyse → key → fix, the current UI) · legacy /api/jobs + /api/sounds · serves web/dist
 fixer.py        STYLES (rap / melodic / pop: tone target, dynamics, space, auto-tune default) · studio chain: PREP (clean/hum/resonance/auto-tune, cached) → POLISH (scaled by Mix) → SPACE (doubler, ducked convolution reverb + ping-pong) → TP master · render() for Mix-panel tweaks
+restore.py      AI restoration from upload: Roformer de-noise -> de-reverb (audio-separator; models/, optional, one take at a time)
+pro.py          Airwindows Consolidated VST3 via pedalboard (Air3 / DeBess / Channel9; plugins/, optional, built-in DSP fallback)
+ir/             Dragonfly Reverb room/plate/hall captured as IRs (tools/capture_irs.py): same file on server + browser
 tune.py         auto-tune: WORLD vocoder <5 kHz on voiced frames, original air/consonants kept   keys.py  vocal held-note key detector (+ beat via key-service)
 analysis.py     Phantom (WSL) full_diagnostic over MCP
 match.py        our render vs FL Studio's render (per-band dB, LUFS, peak)

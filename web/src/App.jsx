@@ -348,7 +348,7 @@ export default function App() {
             </div>
 
             <div className="mt-4 flex flex-wrap gap-1.5">
-              {job.score_after != null && <Chip label="Readiness" value={`${job.score} → ${job.score_after}`} />}
+              {job.score_after != null && <Chip label="Readiness" value={job.score != null ? `${job.score} → ${job.score_after}` : `${job.score_after}`} />}
               {job.key && <Chip label="Key" value={job.key} />}
               {job.lufs_raw != null && <Chip label="Loudness" value={`${job.lufs_raw} → ${job.lufs_out} LUFS`} />}
             </div>

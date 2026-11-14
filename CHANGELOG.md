@@ -2,6 +2,33 @@
 
 The newest entries come first. Each entry lists what changed for users, then what changed under the hood.
 
+## 2026-11-14: New sound engine merged into `main`, system brief
+- **`sound-engine` → `main`:** the AI restoration + pro-processor engine below is now in `main`.
+- **`SYSTEM-BRIEF.md`:** the whole system on one page (flow, fix chain, files, rules, open items) to hand to Claude Code; CLAUDE.md points to it first.
+- **Verified before the merge:** every sound (Rap, Melodic, Pop) through the live server: analysis, key, AI restoration, fix, MP3/WAV formats, mix export, reset, upload privacy. Also the 36 app tests, the 65 key-service tests, the UI build and the legacy preset engine (-16.0 LUFS).
+- **Fixed:** the analysis timed out when AI restoration ran beside it (they now run one after the other); the readiness chip could read "undefined → 88".
+
+## 2026-11-13: New sound engine (the blind-test winner)
+- **Blind A/B:** the owner compared 9 clips: real takes plus simulated bedroom echo, phone and worst-case copies, and
+  one real phone take. **AI restoration + pro processors** won 7 of 9. The product now makes exactly that sound: on the
+  test clips it matches the winning renders to 0.03–0.07 dB, with the same loudness.
+- **AI restoration (`restore.py`):** MelBand-Roformer de-noise, then de-reverb (audio-separator). It turns a phone or
+  bedroom take into a booth-like dry vocal before the mix. It starts the moment a take is uploaded, and "Fix" waits for
+  it if needed. The UI shows a "Studio restoration (AI)" step.
+- **Pro processors (`pro.py`):** Airwindows **Air3** (air), **DeBess** (S/T) and **Channel9** (console colour) replace our
+  own exciter, de-esser and saturation. If the plugin isn't installed, the built-ins still run.
+- **Reverb:** **Dragonfly Reverb**'s Room, Plate and Hall, captured as impulse responses (`ir/`, `tools/capture_irs.py`)
+  at the level heard in the blind test. Server and browser play the identical files.
+- **Speed:**
+  - restoration on the RTX 3050 GPU runs at ~1.2–1.8× the take's length (CPU: ~7×);
+  - de-noise overlap 4 → 2 made it 1.7× faster, changing the output by -59 dB (inaudible);
+  - an 83 s take goes from upload to done in ~3.7 min.
+- **Setup:**
+  - `start.ps1` / `start.sh` install the plugin (pinned, SHA-256 checked) and the models (~1.8 GB, first start);
+  - `requirements.txt` adds `audio-separator[cpu]` (and `audioread`);
+  - NVIDIA users swap in CUDA torch (SETUP.md).
+- **Wording:** the "damage we can't undo" step no longer tells people to re-record.
+
 ## 2026-11-12: Merged into `main`
 - **All the work from the `ui-redesign` → `phantom-analysis` → `vocal-fixer` branches is now in `main`.**
 - **Faster first load:** three.js, which draws the backdrop, now loads after the page appears. The page's own JavaScript went from 763 kB to 284 kB (95 kB gzipped).
