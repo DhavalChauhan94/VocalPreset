@@ -5,7 +5,7 @@ It doesn't install on Windows (no Essentia wheel), so on Windows it runs inside 
   wsl:  PHANTOM_NO_TELEMETRY=1 uv tool install phantom-audio --python 3.13
 Env vars:
   PHANTOM_CMD      server command (default: phantom-mcp via WSL on Windows, phantom-mcp elsewhere)
-  PHANTOM_TIMEOUT  seconds (default 60)
+  PHANTOM_TIMEOUT  seconds (default 120: a take is ~10 s alone, but another take's AI restoration can slow it past 60)
 Usage: python analysis.py vocal.m4a   -> prints the full_diagnostic JSON
 """
 import asyncio
@@ -51,7 +51,7 @@ async def _call(path, timeout):
 def analyze(path, timeout=None):
     """full_diagnostic of any upload. Phantom decodes with soundfile, which can't read WhatsApp
     .mpeg, m4a or video, so we hand it a lossless float WAV of the take (same rate and channels)."""
-    timeout = timeout or float(os.environ.get("PHANTOM_TIMEOUT", 60))
+    timeout = timeout or float(os.environ.get("PHANTOM_TIMEOUT", 120))
     fd, wav = tempfile.mkstemp(suffix=".wav")
     os.close(fd)
     try:

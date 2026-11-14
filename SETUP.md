@@ -66,7 +66,7 @@ Phantom doesn't support Windows, so on Windows it runs in WSL. Do this once:
    ```
 3. Back in Windows, check it: `.venv\Scripts\python analysis.py some_vocal.wav` prints the JSON report.
 
-We don't use `curl https://fadelab.net/install | bash`: piped like that, it installs every extra (~2.5 GB of PyTorch), sends install telemetry and adds a Claude Code plugin. On Linux or macOS, skip WSL and set `PHANTOM_CMD=phantom-mcp` (that's already the default off Windows). `PHANTOM_TIMEOUT` (default 60 s) caps how long a job waits for the analysis.
+We don't use `curl https://fadelab.net/install | bash`: piped like that, it installs every extra (~2.5 GB of PyTorch), sends install telemetry and adds a Claude Code plugin. On Linux or macOS, skip WSL and set `PHANTOM_CMD=phantom-mcp` (that's already the default off Windows). `PHANTOM_TIMEOUT` (default 120 s) caps how long a job waits for the analysis.
 
 ## Key service for auto-tune (optional, in WSL)
 `key-service/` detects a song's key from the **beat** someone adds in the auto-tune card. Without it, the app still works: `keys.py` uses its own vocal-based detector.
